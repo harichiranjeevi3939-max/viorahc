@@ -1,0 +1,7 @@
+{
+  "name": "Tundra-Viora: Your Personal Study Assistant",
+  "description": "An AI-powered study application that analyzes uploaded documents and images to generate interactive tests, flashcards, and in-depth explanations. Features a study chatbot to help with complex questions and math problems, and real-time voice conversations.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

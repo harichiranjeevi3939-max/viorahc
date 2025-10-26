@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tundra-Viora: Your Personal Study Assistant</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" integrity="sha384-n8MVd4RsNIU0KOVEMmg9zuCMZg1mbxWrpQweFραςdvJjw2GsvfXi/qlRTsA0Irz" crossorigin="anonymous">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" integrity="sha384-XjKyOOlGwcjNTAIQHIpgOno0Hl1YQqzUOEleOLALmuqehneUG+vnGctmloGiJTAo" crossorigin="anonymous"></script>
+    <style>
+      .animate-slide-in {
+        animation: slide-in 0.5s cubic-bezier(0.250, 0.460, 0.450, 0.940) both;
+      }
+      .text-stroke {
+        -webkit-text-stroke: 1px rgba(255, 255, 255, 0.1);
+        paint-order: stroke fill;
+      }
+      .dark .text-stroke {
+        -webkit-text-stroke: 1px rgba(255, 255, 255, 0.05);
+      }
+      .thinking-text {
+        background: linear-gradient(90deg, #c084fc, #f472b6, #60a5fa, #c084fc);
+        background-size: 200% auto;
+        color: #000;
+        background-clip: text;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        font-weight: 500;
+      }
+      .animate-thinking-v2 {
+        animation: thinking-v2-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+      }
+      .animate-thinking-v2 > svg {
+         animation: thinking-v2-pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+      }
+      .reader-highlight {
+        background-color: rgba(192, 132, 252, 0.3); /* purple-400 with opacity */
+        border-radius: 3px;
+        padding: 0 2px;
+      }
+      .dark .reader-highlight {
+         background-color: rgba(167, 139, 250, 0.4); /* violet-400 with opacity */
+      }
+      .skeleton-loader {
+        position: relative;
+        overflow: hidden;
+        background-color: rgba(0,0,0,0.08);
+      }
+      .dark .skeleton-loader {
+        background-color: rgba(255,255,255,0.08);
+      }
+      .skeleton-loader::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+        animation: skeleton-loading 1.5s infinite;
+      }
+       .dark .skeleton-loader::after {
+         background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
+       }
+    </style>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              primary: {"50":"#eff6ff","100":"#dbeafe","200":"#bfdbfe","300":"#93c5fd","400":"#60a5fa","500":"#3b82f6","600":"#2563eb","700":"#1d4ed8","800":"#1e40af","900":"#1e3a8a","950":"#172554"}
+            },
+            backdropBlur: {
+              '3xl': '32px',
+            },
+            textShadow: {
+              '3d': '2px -2px 5px rgba(255, 255, 255, 0.3), -2px 2px 5px rgba(0, 0, 0, 0.3)',
+            },
+            keyframes: {
+                gradient: {
+                    '0%': { backgroundPosition: '0% 50%' },
+                    '50%': { backgroundPosition: '100% 50%' },
+                    '100%': { backgroundPosition: '0% 50%' },
+                },
+                'slide-in': {
+                  '0%': {
+                    transform: 'translateY(20px)',
+                    opacity: 0,
+                  },
+                  '100%': {
+                    transform: 'translateY(0)',
+                    opacity: 1,
+                  }
+                },
+                'thinking-v2-glow': {
+                  '0%, 100%': { opacity: 0.8 },
+                  '50%': { opacity: 1 },
+                },
+                'thinking-v2-pulse': {
+                  '0%, 100%': { transform: 'scale(1)' },
+                  '50%': { transform: 'scale(1.08)' },
+                },
+                'text-gradient-shine': {
+                    'to': { backgroundPosition: '200% center' },
+                },
+                'skeleton-loading': {
+                  '0%': { left: '-100%' },
+                  '100%': { left: '100%' },
+                }
+            },
+            animation: {
+                gradient: 'gradient 25s ease infinite',
+                'text-gradient-shine': 'text-gradient-shine 2.5s linear infinite',
+                'thinking-v2': 'thinking-v2-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            },
+            backgroundSize: {
+              '200%': '200%',
+            }
+          }
+        }
+      }
+    </script>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.27.0"
+  }
+}
+</script>
+</head>
+  <body class="bg-gray-100 dark:bg-gray-900 bg-gradient-to-br from-orange-50 via-white to-sky-100 dark:from-gray-900 dark:via-purple-900 dark:to-teal-900 transition-colors duration-500 bg-200% animate-gradient">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
