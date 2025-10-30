@@ -55,3 +55,26 @@ export interface AppSettings {
   showSuggestions: boolean;
   showRetryQuiz: boolean;
 }
+
+// Viora Group Chat Types
+export interface GroupChatMessage {
+  id: string;
+  userId: string;
+  userName: string;
+  text: string;
+  timestamp: number;
+  isViora?: boolean;
+}
+
+export interface GroupChatMember {
+    userId: string;
+    userName:string;
+}
+
+export interface GroupChatSession {
+  id: string; // The join code
+  hostId: string;
+  members: GroupChatMember[];
+  messages: GroupChatMessage[];
+  groupIcon: string; // A string to generate a unique SVG pattern
+}

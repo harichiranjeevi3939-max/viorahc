@@ -43,7 +43,8 @@ const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultCh
     const colors = theme === 'professional' ? professionalThemeColors : darkThemeColors;
 
     const getScoreBarColor = (score: number, total: number) => {
-        const percentage = (score / total) * 100;
+        // Fix: Added check for total > 0 to prevent division by zero.
+        const percentage = total > 0 ? (score / total) * 100 : 0;
         if (percentage >= 80) return colors.score.high;
         if (percentage >= 50) return colors.score.medium;
         return colors.score.low;
@@ -95,7 +96,8 @@ const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultCh
 
     const totalQuizzes = progress.length;
     const averageScore = totalQuizzes > 0 
-        ? (progress.reduce((acc, p) => acc + (p.score / p.totalQuestions), 0) / totalQuizzes) * 100
+        // Fix: Added check for p.totalQuestions > 0 to prevent division by zero inside reduce.
+        ? (progress.reduce((acc, p) => acc + (p.totalQuestions > 0 ? p.score / p.totalQuestions : 0), 0) / totalQuizzes) * 100
         : 0;
 
     // Chart Data
@@ -166,15 +168,17 @@ const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultCh
             )
         }
         if (chartType === 'line') {
+             // Fix: Extracted calculation to a constant to resolve a potential TS/JSX parsing issue on the viewBox attribute.
+             const svgHeight = 100 / 3;
              return (
                  <div className="h-40 w-full pr-4">
-                     <svg width="100%" height="100%" viewBox={`0 0 100 ${100/3}`}>
+                     <svg width="100%" height="100%" viewBox={`0 0 100 ${svgHeight}`}>
                         {/* Y Axis */}
                         <text x="0" y="3" fontSize="3" fill={theme === 'professional' ? '#6b7280' : '#9ca3af'}>100%</text>
-                        <text x="0" y={`${100/6 + 1.5}`} fontSize="3" fill={theme === 'professional' ? '#6b7280' : '#9ca3af'}>50%</text>
-                        <text x="0" y={`${100/3}`} fontSize="3" fill={theme === 'professional' ? '#6b7280' : '#9ca3af'}>0%</text>
-                        <line x1="8" y1="0" x2="8" y2={`${100/3}`} stroke={theme === 'professional' ? '#e5e7eb' : '#374151'} strokeWidth="0.2"/>
-                        <line x1="8" y1={`${100/3}`} x2="100" y2={`${100/3}`} stroke={theme === 'professional' ? '#e5e7eb' : '#374151'} strokeWidth="0.2"/>
+                        <text x="0" y={`${svgHeight / 2 + 1.5}`} fontSize="3" fill={theme === 'professional' ? '#6b7280' : '#9ca3af'}>50%</text>
+                        <text x="0" y={`${svgHeight}`} fontSize="3" fill={theme === 'professional' ? '#6b7280' : '#9ca3af'}>0%</text>
+                        <line x1="8" y1="0" x2="8" y2={`${svgHeight}`} stroke={theme === 'professional' ? '#e5e7eb' : '#374151'} strokeWidth="0.2"/>
+                        <line x1="8" y1={`${svgHeight}`} x2="100" y2={`${svgHeight}`} stroke={theme === 'professional' ? '#e5e7eb' : '#374151'} strokeWidth="0.2"/>
                         
                         {/* Line and Points */}
                         {recentScores.length > 1 && (
@@ -183,20 +187,23 @@ const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultCh
                                 stroke={colors.line}
                                 strokeWidth="0.5"
                                 points={recentScores.map((attempt, i) => {
-                                    const x = 8 + (92 / (recentScores.length -1)) * i;
-                                    const y = (100 - (attempt.score / attempt.totalQuestions * 100)) * (100/3) / 100;
+                                    {/* Fix: Added space in 'length - 1' for clarity and to prevent potential parser issues. */}
+                                    const x = 8 + (92 / (recentScores.length - 1)) * i;
+                                    const percentage = attempt.totalQuestions > 0 ? (attempt.score / attempt.totalQuestions * 100) : 0;
+                                    const y = (100 - percentage) * svgHeight / 100;
                                     return `${x},${y}`;
                                 }).join(' ')}
                             />
                         )}
                         {recentScores.map((attempt, i) => {
                             const x = 8 + (recentScores.length > 1 ? (92 / (recentScores.length - 1)) * i : 46);
-                            const y = (100 - (attempt.score / attempt.totalQuestions * 100)) * (100/3) / 100;
+                            const percentage = attempt.totalQuestions > 0 ? (attempt.score / attempt.totalQuestions * 100) : 0;
+                            const y = (100 - percentage) * svgHeight / 100;
                             return (
                                 <g key={attempt.id} className="group">
                                     <circle cx={x} cy={y} r="1" fill={colors.line} className="cursor-pointer" />
                                      <text x={x} y={y - 2} fontSize="3" fill={theme === 'professional' ? '#374151' : '#f3f4f6'} textAnchor="middle" className="opacity-0 group-hover:opacity-100 transition-opacity">
-                                        {`${(attempt.score/attempt.totalQuestions*100).toFixed(0)}%`}
+                                        {`${percentage.toFixed(0)}%`}
                                     </text>
                                 </g>
                             )
@@ -213,7 +220,8 @@ const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultCh
                 <span className="absolute -left-1 bottom-[-8px] text-xs text-gray-500 w-8 text-right pr-2">0%</span>
                 
                 {recentScores.length > 0 ? recentScores.map((attempt, index) => {
-                    const percentage = (attempt.score / attempt.totalQuestions) * 100;
+                    // Fix: Added check for attempt.totalQuestions > 0 to prevent division by zero.
+                    const percentage = attempt.totalQuestions > 0 ? (attempt.score / attempt.totalQuestions) * 100 : 0;
                     return (
                         <div key={attempt.id} className="group flex-1 flex flex-col items-center justify-end h-full">
                             <div className="relative w-full h-full flex items-end justify-center">
@@ -300,7 +308,8 @@ const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultCh
                                             </div>
                                             <div className="text-right">
                                                 <p className="font-bold text-lg">{attempt.score} / {attempt.totalQuestions}</p>
-                                                <p className={`text-sm ${theme === 'professional' ? 'text-gray-600' : 'text-gray-600 dark:text-gray-400'}`}>{((attempt.score / attempt.totalQuestions) * 100).toFixed(0)}%</p>
+                                                {/* Fix: Added check for attempt.totalQuestions > 0 to prevent division by zero. */}
+                                                <p className={`text-sm ${theme === 'professional' ? 'text-gray-600' : 'text-gray-600 dark:text-gray-400'}`}>{((attempt.totalQuestions > 0 ? attempt.score / attempt.totalQuestions : 0) * 100).toFixed(0)}%</p>
                                             </div>
                                         </button>
                                         {expandedAttemptId === attempt.id && (

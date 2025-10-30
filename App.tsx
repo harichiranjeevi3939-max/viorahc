@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Header from './components/Header';
 import StudyViora from './components/StudyViora';
+import VioraGroupChat from './components/VioraGroupChat';
 import ProgressModal from './components/ProgressModal';
 import SettingsModal from './components/SettingsModal';
 import { getAppSettings, saveAppSettings } from './utils/localStorageUtils';
@@ -12,12 +13,14 @@ const App: React.FC = () => {
   const [theme, setTheme] = useState<Theme>((localStorage.getItem('theme') as Theme) || 'dark');
   const [isProgressModalOpen, setIsProgressModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [isGroupChatOpen, setIsGroupChatOpen] = useState(false);
   const [chartRequest, setChartRequest] = useState<string | null>(null);
 
   const [settings, setSettings] = useState<AppSettings>(() => getAppSettings());
   
   const progressButtonRef = useRef<HTMLButtonElement>(null);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
+  const groupChatButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     saveAppSettings(settings);
@@ -64,6 +67,11 @@ const App: React.FC = () => {
     setIsSettingsModalOpen(false);
     settingsButtonRef.current?.focus();
   };
+  
+  const handleCloseGroupChat = () => {
+    setIsGroupChatOpen(false);
+    groupChatButtonRef.current?.focus();
+  };
 
 
   return (
@@ -71,10 +79,12 @@ const App: React.FC = () => {
       <Header 
         progressButtonRef={progressButtonRef}
         settingsButtonRef={settingsButtonRef}
+        groupChatButtonRef={groupChatButtonRef}
         theme={theme} 
         onToggleTheme={handleToggleTheme}
         onShowProgress={() => handleShowProgress()}
         onShowSettings={() => setIsSettingsModalOpen(true)}
+        onShowGroupChat={() => setIsGroupChatOpen(true)}
       />
       <main className="flex-grow flex flex-col relative overflow-hidden pt-[61px] -mt-[61px]">
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none">
@@ -92,6 +102,7 @@ const App: React.FC = () => {
       </main>
       {isProgressModalOpen && <ProgressModal onClose={handleCloseProgressModal} theme={theme} defaultChart={chartRequest} />}
       {isSettingsModalOpen && <SettingsModal onClose={handleCloseSettingsModal} theme={theme} settings={settings} onSettingsChange={setSettings} />}
+      {isGroupChatOpen && <VioraGroupChat onClose={handleCloseGroupChat} theme={theme} />}
     </div>
   );
 };

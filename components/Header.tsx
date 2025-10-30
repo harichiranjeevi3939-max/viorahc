@@ -1,5 +1,5 @@
 import React, { forwardRef, RefObject } from 'react';
-import { HumanBrainIcon, ProgressIcon, SunIcon, MoonIcon, SettingsIcon } from './icons';
+import { HumanBrainIcon, ProgressIcon, SunIcon, MoonIcon, SettingsIcon, UsersIcon } from './icons';
 import type { Theme } from '../App';
 
 interface HeaderProps {
@@ -7,11 +7,13 @@ interface HeaderProps {
   onShowProgress: () => void;
   onToggleTheme: () => void;
   onShowSettings: () => void;
+  onShowGroupChat: () => void;
   progressButtonRef: RefObject<HTMLButtonElement>;
   settingsButtonRef: RefObject<HTMLButtonElement>;
+  groupChatButtonRef: RefObject<HTMLButtonElement>;
 }
 
-const Header: React.FC<HeaderProps> = ({ theme, onShowProgress, onToggleTheme, onShowSettings, progressButtonRef, settingsButtonRef }) => {
+const Header: React.FC<HeaderProps> = ({ theme, onShowProgress, onToggleTheme, onShowSettings, onShowGroupChat, progressButtonRef, settingsButtonRef, groupChatButtonRef }) => {
   return (
     <header className={`w-full backdrop-blur-xl shadow-lg z-50 border-b transition-colors duration-300 fixed top-0 left-0 right-0 ${theme === 'professional' ? 'bg-white/80 border-gray-200' : 'bg-white/20 dark:bg-black/20 border-black/15 dark:border-white/15'}`}>
       <div className="container mx-auto px-4 py-3 flex justify-between items-center">
@@ -38,6 +40,14 @@ const Header: React.FC<HeaderProps> = ({ theme, onShowProgress, onToggleTheme, o
             aria-label="Show Progress"
           >
             <ProgressIcon className="w-6 h-6" />
+          </button>
+          <button
+            ref={groupChatButtonRef}
+            onClick={onShowGroupChat}
+            className={`p-2 rounded-full transition-colors ${theme === 'professional' ? 'text-gray-600 bg-gray-500/10 hover:bg-gray-500/20' : 'text-gray-700 dark:text-gray-300 bg-white/10 hover:bg-white/20 dark:bg-black/10 dark:hover:bg-black/20'}`}
+            aria-label="Viora Group Chat"
+          >
+            <UsersIcon className="w-6 h-6" />
           </button>
            <button
             ref={settingsButtonRef}

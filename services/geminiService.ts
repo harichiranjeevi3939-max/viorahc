@@ -1,6 +1,6 @@
 // Fix: Removed LiveSession as it is not an exported member of @google/genai.
 import { GoogleGenAI, Type, Modality, FunctionDeclaration, LiveServerMessage } from "@google/genai";
-import type { UploadedFile, ChatMessage, GeminiResponse } from '../types';
+import type { UploadedFile, ChatMessage, GeminiResponse, GroupChatMessage } from '../types';
 
 const API_KEY = process.env.API_KEY;
 
@@ -208,6 +208,41 @@ Your top priority is to correctly identify the user's intent and select the appr
     } catch (error) {
         console.error("Error generating chat response:", error);
         return { type: 'text', content: "Sorry, I encountered an error. Please try again." };
+    }
+};
+
+export const generateGroupChatResponse = async (prompt: string, history: GroupChatMessage[]): Promise<string> => {
+    try {
+        const model = 'gemini-2.5-flash';
+        const systemInstruction = `You are Viora, an AI tutor integrated into a group chat for students. Your role is to assist the study group with their questions. 
+- When a user mentions you by name (by including "Viora" in their message), provide a clear, concise, and helpful response. 
+- Address the group collaboratively (e.g., "That's a great question!", "Let's break this down."). 
+- Keep responses focused and directly related to their study topic.
+- Use LaTeX for any math or science notation.`;
+        
+        const historyContents = history.slice(-10).map(msg => { // last 10 messages for context
+            return {
+                role: msg.isViora ? 'model' : 'user',
+                parts: [{ text: `${msg.isViora ? '' : msg.userName + ': '}${msg.text}` }]
+            };
+        });
+        
+        const newContent = { role: 'user', parts: [{ text: prompt }] };
+
+        const contents = [...historyContents, newContent];
+
+        const response = await ai.models.generateContent({
+            model: model,
+            contents: contents,
+            config: {
+                systemInstruction: systemInstruction,
+            }
+        });
+
+        return response.text;
+    } catch (error) {
+        console.error("Error generating group chat response:", error);
+        return "I seem to be having trouble connecting. Please try again in a moment.";
     }
 };
 
