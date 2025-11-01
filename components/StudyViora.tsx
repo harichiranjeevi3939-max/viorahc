@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { generateChatResponse, generateTest, generateExplanation, generateFlashcards, generateSummary, generateSuggestions, generateSpeech } from '../services/geminiService';
+import { generateChatResponse, generateTest, generateExplanation, generateFlashcards, generateSummary, generateSuggestions, generateSpeech, extractTextFromFile, generateTopicForContent } from '../services/geminiService';
 import VioraReader from './VioraReader';
 import LiveConversation from './LiveConversation';
 import type { ChatMessage, MCQ, Flashcard, UploadedFile, UserAnswer, QuizAttempt, AppSettings } from '../types';
@@ -9,6 +9,8 @@ import { saveQuizAttempt, getStudyProgress, getChatHistory, saveChatHistory } fr
 import { MarkdownRenderer } from '../utils/markdownUtils';
 import { SendIcon, UploadIcon, CloseIcon, HumanBrainIcon, BrainCircuitIcon, CheckCircleIcon, XCircleIcon, FileTextIcon, UserIcon, SummarizeIcon, Volume2Icon, StopCircleIcon, MicrophoneIcon } from './icons';
 import type { Theme } from '../App';
+
+declare const mammoth: any;
 
 type Mode = 'chat' | 'test' | 'flashcards' | 'test_results' | 'reader';
 type Difficulty = 'Basic' | 'Standard' | 'Hard';
@@ -35,9 +37,18 @@ const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, on
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+    const [processingFiles, setProcessingFiles] = useState<string[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const chatEndRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+    const acceptedFileTypes = [
+        "image/*",
+        "application/pdf",
+        "text/plain",
+        "application/msword", // .doc
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
+    ].join(',');
 
     // Reader state
     const [fileForReader, setFileForReader] = useState<UploadedFile | null>(null);
@@ -116,47 +127,94 @@ const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, on
         const files = event.target.files;
         if (!files) return;
 
-        const newFiles: UploadedFile[] = [];
+        const newUploadedFiles: UploadedFile[] = [];
         const unsupportedFiles: string[] = [];
         let hasPdf = false;
 
-        for (let i = 0; i < files.length; i++) {
-            const file = files[i];
-            if (uploadedFiles.some(f => f.name === file.name)) continue;
+        const docxMimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        const docMimeType = 'application/msword';
 
-            if (file.type.startsWith('image/') || file.type === 'application/pdf') {
-                const base64 = await fileToBase64(file);
-                newFiles.push({ name: file.name, type: 'binary', content: base64, mimeType: file.type });
-                if (file.type === 'application/pdf') hasPdf = true;
-            } else if (file.type.startsWith('text/plain')) {
-                 const text = await file.text();
-                 newFiles.push({ name: file.name, type: 'text', content: text, mimeType: file.type });
-            } else {
-                 unsupportedFiles.push(file.name);
+        const filesToProcess = Array.from(files).filter((file: File) => 
+            !uploadedFiles.some(f => f.name === file.name) && !processingFiles.includes(file.name)
+        );
+        
+        if (filesToProcess.length === 0) return;
+
+        setProcessingFiles(prev => [...prev, ...filesToProcess.map(f => f.name)]);
+
+        const processFile = async (file: File): Promise<UploadedFile | null> => {
+            try {
+                // Use Mammoth.js for .docx files for speed
+                if (file.type === docxMimeType && typeof mammoth !== 'undefined') {
+                    const arrayBuffer = await file.arrayBuffer();
+                    const result = await mammoth.extractRawText({ arrayBuffer: arrayBuffer });
+                    return { name: file.name, type: 'text', content: result.value, mimeType: 'text/plain' };
+                }
+                
+                // Use Gemini for .doc files and as a fallback for .docx
+                if (file.type === docMimeType || file.type === docxMimeType) {
+                     const tempFile: UploadedFile = { name: file.name, type: 'binary', content: await fileToBase64(file), mimeType: file.type };
+                     const textContent = await extractTextFromFile(tempFile);
+                     if (textContent.startsWith('Error:')) {
+                         unsupportedFiles.push(`${file.name} (could not read content)`);
+                         return null;
+                     }
+                     return { name: file.name, type: 'text', content: textContent, mimeType: 'text/plain' };
+                }
+
+                // Handle images and PDFs as binary
+                if (file.type.startsWith('image/') || file.type === 'application/pdf') {
+                    const base64 = await fileToBase64(file);
+                    if (file.type === 'application/pdf') hasPdf = true;
+                    return { name: file.name, type: 'binary', content: base64, mimeType: file.type };
+                }
+                
+                // Handle plain text
+                if (file.type.startsWith('text/plain')) {
+                    const text = await file.text();
+                    return { name: file.name, type: 'text', content: text, mimeType: file.type };
+                }
+
+                unsupportedFiles.push(file.name);
+                return null;
+            } catch (e) {
+                // Fix: Cast the unknown error type to Error to safely access the message property.
+                const error = e as Error;
+                console.error(`Error processing file ${file.name}:`, error.message);
+                unsupportedFiles.push(`${file.name} (processing failed)`);
+                return null;
             }
-        }
+        };
+
+        const processingPromises = filesToProcess.map(processFile);
+        const results = await Promise.all(processingPromises);
         
+        setProcessingFiles(prev => prev.filter(name => !filesToProcess.some(f => f.name === name)));
+        
+        newUploadedFiles.push(...results.filter((f): f is UploadedFile => f !== null));
+
         if (unsupportedFiles.length > 0) {
-            alert(`Note: The following file type(s) are not supported and were ignored: ${unsupportedFiles.join(', ')}.\n\ Tundra-Viora can analyze Images, PDFs, and plain TXT files.`);
+            alert(`Note: The following file(s) were not supported or could not be processed: ${unsupportedFiles.join(', ')}.\n\nTundra-Viora can analyze Images, PDFs, Word Docs, and plain TXT files.`);
         }
-        
-        if (newFiles.length > 0) {
-            setUploadedFiles(prev => [...prev, ...newFiles]);
-            // Proactively provide suggestions after upload
+
+        if (newUploadedFiles.length > 0) {
+            setUploadedFiles(prev => [...prev, ...newUploadedFiles]);
             const suggestions: string[] = [];
-            if (hasPdf) suggestions.push("Open in Reader");
+            if (hasPdf || newUploadedFiles.some(f => f.mimeType === 'application/pdf')) {
+                suggestions.push("Open in Reader");
+            }
             suggestions.push("Summarize this for me", "Create a 10-question quiz from this");
 
             const systemMessage: ChatMessage = {
                 id: self.crypto.randomUUID(),
                 role: 'system',
-                text: `${newFiles.length} file(s) ready! What's our next move?`,
+                text: `${newUploadedFiles.length} file(s) ready! What's our next move?`,
                 suggestions: suggestions
             };
-            setMessages(prev => [...prev.filter(m => !m.isInitial), systemMessage]);
+            setMessages(prev => [...prev.filter(m => !m.isInitial && m.role !== 'system'), systemMessage]);
         }
-        
-        if(event.target) event.target.value = '';
+
+        if (event.target) event.target.value = '';
     };
 
     const handleRemoveFile = (fileName: string) => {
@@ -176,6 +234,7 @@ const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, on
             setTestResults([]);
             setMode('test');
         } catch (error) {
+            // Fix: Cast the unknown error type to Error to safely access the message property.
             const err = error as Error;
             setMode('chat');
             setMessages(prev => [...prev, { id: self.crypto.randomUUID(), role: 'system', text: `Error generating test: ${err.message}` }]);
@@ -388,7 +447,7 @@ const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, on
         setUserAnswers(new Map(userAnswers.set(question, answer)));
     };
 
-    const handleSubmitTest = () => {
+    const handleSubmitTest = async () => {
         const results = mcqs.map(mcq => {
             const selected = userAnswers.get(mcq.question) || "";
             return {
@@ -403,6 +462,7 @@ const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, on
         
         // Save the attempt to local storage
         if (currentQuizContext) {
+            const topic = await generateTopicForContent(currentQuizContext.content);
             const score = results.filter(r => r.isCorrect).length;
             const timeTaken = quizStartTime ? Math.round((Date.now() - quizStartTime) / 1000) : 0;
             const newAttempt: QuizAttempt = {
@@ -414,6 +474,7 @@ const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, on
                 results: results,
                 sourceContent: currentQuizContext.content,
                 timeTaken,
+                topic,
             };
             saveQuizAttempt(newAttempt);
             const progress = getStudyProgress();
@@ -557,8 +618,15 @@ const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, on
                             </div>
                         </div>
                     )}
+                    {processingFiles.length > 0 && (
+                        <div className={`mb-3 p-3 rounded-lg animate-pulse ${theme === 'professional' ? 'bg-gray-200/60' : 'bg-black/10 dark:bg-black/20'}`}>
+                            <p className={`text-sm text-center ${theme === 'professional' ? 'text-gray-600' : 'text-gray-600 dark:text-gray-400'}`}>
+                                Viora is reading {processingFiles.length} file(s): {processingFiles.join(', ')}...
+                            </p>
+                        </div>
+                    )}
                     <div className={`relative flex items-end gap-2 p-2 rounded-2xl shadow-lg transition-colors duration-300 ${theme === 'professional' ? 'bg-white/95 border border-gray-200' : 'bg-white/60 dark:bg-black/40 border border-black/10 dark:border-white/15'}`}>
-                        <button onClick={() => fileInputRef.current?.click()} className={`p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors ${theme === 'professional' ? 'text-gray-500 hover:text-gray-800' : 'text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white'}`} title="Upload File">
+                        <button onClick={() => fileInputRef.current?.click()} disabled={processingFiles.length > 0} className={`p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${theme === 'professional' ? 'text-gray-500 hover:text-gray-800' : 'text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white'}`} title="Upload File">
                             <UploadIcon className="w-6 h-6" />
                         </button>
                         <button onClick={() => setIsLiveConversationActive(true)} className={`p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors ${theme === 'professional' ? 'text-gray-500 hover:text-gray-800' : 'text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white'}`} title="Live Conversation">
@@ -575,12 +643,12 @@ const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, on
                             }}
                             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }}
                             placeholder="Ask Viora anything, or type 'create a quiz'..."
-                            className={`w-full p-1 bg-transparent placeholder-gray-500 resize-none max-h-48 focus:outline-none ${theme === 'professional' ? 'text-gray-900' : 'text-gray-900 dark:text-white dark:placeholder-gray-400'}`}
+                            className={`w-full p-1 bg-transparent placeholder-gray-500 resize-none max-h-48 focus:outline-none disabled:opacity-50 ${theme === 'professional' ? 'text-gray-900' : 'text-gray-900 dark:text-white dark:placeholder-gray-400'}`}
                             rows={1}
-                            disabled={isLoading}
+                            disabled={isLoading || processingFiles.length > 0}
                         />
-                        <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" multiple accept="image/*,application/pdf,text/plain" />
-                        <button onClick={() => handleSendMessage()} disabled={isLoading || (!input.trim() && uploadedFiles.length === 0)} className={`p-3 text-white bg-gradient-to-br rounded-full disabled:from-gray-500 disabled:to-gray-600 disabled:opacity-70 hover:opacity-90 transition-all ${theme === 'professional' ? 'from-orange-500 to-sky-500' : 'from-purple-500 to-pink-500'}`} title="Send Message">
+                        <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" multiple accept={acceptedFileTypes} />
+                        <button onClick={() => handleSendMessage()} disabled={isLoading || (!input.trim() && uploadedFiles.length === 0) || processingFiles.length > 0} className={`p-3 text-white bg-gradient-to-br rounded-full disabled:from-gray-500 disabled:to-gray-600 disabled:opacity-70 hover:opacity-90 transition-all ${theme === 'professional' ? 'from-orange-500 to-sky-500' : 'from-purple-500 to-pink-500'}`} title="Send Message">
                             <SendIcon className="w-5 h-5" />
                         </button>
                     </div>

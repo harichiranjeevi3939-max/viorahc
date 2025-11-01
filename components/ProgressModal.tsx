@@ -32,6 +32,8 @@ const professionalThemeColors = {
 };
 
 type ChartType = 'pie' | 'bar' | 'line';
+type SortField = 'date' | 'score' | 'topic';
+type SortOrder = 'asc' | 'desc';
 
 const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultChart }) => {
     const [progress, setProgress] = useState<QuizAttempt[]>([]);
@@ -39,11 +41,12 @@ const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultCh
     const modalRef = useRef<HTMLDivElement>(null);
     const [hoveredDifficulty, setHoveredDifficulty] = useState<string | null>(null);
     const [chartType, setChartType] = useState<ChartType>( (defaultChart as ChartType) || 'bar');
+    const [sortField, setSortField] = useState<SortField>('date');
+    const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
 
     const colors = theme === 'professional' ? professionalThemeColors : darkThemeColors;
 
     const getScoreBarColor = (score: number, total: number) => {
-        // Fix: Added check for total > 0 to prevent division by zero.
         const percentage = total > 0 ? (score / total) * 100 : 0;
         if (percentage >= 80) return colors.score.high;
         if (percentage >= 50) return colors.score.medium;
@@ -53,6 +56,26 @@ const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultCh
     useEffect(() => {
         setProgress(getStudyProgress());
     }, []);
+    
+    const sortedProgress = [...progress].sort((a, b) => {
+        if (sortField === 'date') {
+            return sortOrder === 'desc' ? b.date - a.date : a.date - b.date;
+        }
+        if (sortField === 'score') {
+            const scoreA = a.totalQuestions > 0 ? a.score / a.totalQuestions : 0;
+            const scoreB = b.totalQuestions > 0 ? b.score / b.totalQuestions : 0;
+            return sortOrder === 'desc' ? scoreB - scoreA : scoreA - scoreB;
+        }
+        if (sortField === 'topic') {
+            if (a.topic && !b.topic) return -1;
+            if (!a.topic && b.topic) return 1;
+            if (!a.topic && !b.topic) return 0;
+            
+            const comparison = a.topic!.localeCompare(b.topic!);
+            return sortOrder === 'asc' ? comparison : -comparison;
+        }
+        return 0;
+    });
 
     useEffect(() => {
         const modalNode = modalRef.current;
@@ -96,7 +119,6 @@ const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultCh
 
     const totalQuizzes = progress.length;
     const averageScore = totalQuizzes > 0 
-        // Fix: Added check for p.totalQuestions > 0 to prevent division by zero inside reduce.
         ? (progress.reduce((acc, p) => acc + (p.totalQuestions > 0 ? p.score / p.totalQuestions : 0), 0) / totalQuizzes) * 100
         : 0;
 
@@ -106,9 +128,10 @@ const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultCh
         return acc;
     }, {} as Record<'Basic' | 'Standard' | 'Hard', number>);
     
-    let cumulativePercent = 0;
+    // Fix: Explicitly type `cumulativePercent` as a number to avoid potential type inference issues.
+    let cumulativePercent: number = 0;
     const difficultyData = Object.entries(difficultyCounts).map(([key, value]) => {
-        const percent = (value / totalQuizzes) * 100;
+        const percent = totalQuizzes > 0 ? (value / totalQuizzes) * 100 : 0;
         const color = colors.difficulty[key as keyof typeof colors.difficulty];
         const result = {
             key,
@@ -140,7 +163,7 @@ const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultCh
                                     stroke={d.color}
                                     strokeWidth="4"
                                     strokeDasharray={`${d.percent} 100`}
-                                    strokeDashoffset={-d.startAngle * 100 / 360}
+                                    strokeDashoffset={0 - (d.startAngle * 100 / 360)}
                                     className={`transition-all duration-300 ${hoveredDifficulty === d.key ? 'opacity-100' : 'opacity-70'}`}
                                 />
                             ))}
@@ -168,7 +191,6 @@ const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultCh
             )
         }
         if (chartType === 'line') {
-             // Fix: Extracted calculation to a constant to resolve a potential TS/JSX parsing issue on the viewBox attribute.
              const svgHeight = 100 / 3;
              return (
                  <div className="h-40 w-full pr-4">
@@ -187,7 +209,6 @@ const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultCh
                                 stroke={colors.line}
                                 strokeWidth="0.5"
                                 points={recentScores.map((attempt, i) => {
-                                    {/* Fix: Added space in 'length - 1' for clarity and to prevent potential parser issues. */}
                                     const x = 8 + (92 / (recentScores.length - 1)) * i;
                                     const percentage = attempt.totalQuestions > 0 ? (attempt.score / attempt.totalQuestions * 100) : 0;
                                     const y = (100 - percentage) * svgHeight / 100;
@@ -220,7 +241,6 @@ const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultCh
                 <span className="absolute -left-1 bottom-[-8px] text-xs text-gray-500 w-8 text-right pr-2">0%</span>
                 
                 {recentScores.length > 0 ? recentScores.map((attempt, index) => {
-                    // Fix: Added check for attempt.totalQuestions > 0 to prevent division by zero.
                     const percentage = attempt.totalQuestions > 0 ? (attempt.score / attempt.totalQuestions) * 100 : 0;
                     return (
                         <div key={attempt.id} className="group flex-1 flex flex-col items-center justify-end h-full">
@@ -292,9 +312,34 @@ const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultCh
                                 </p>
                             </div>
 
-                            <h3 className="text-lg font-semibold mb-3">All Attempts</h3>
+                             <div className="flex justify-between items-center mb-3">
+                                <h3 className="text-lg font-semibold">All Attempts</h3>
+                                <div className="flex items-center gap-2 text-sm">
+                                    <label htmlFor="sort-field" className="sr-only">Sort by</label>
+                                    <select
+                                        id="sort-field"
+                                        value={sortField}
+                                        onChange={e => setSortField(e.target.value as SortField)}
+                                        className={`rounded-md border-0 py-1 pl-2 pr-7 ring-1 ring-inset focus:ring-2 transition-colors ${theme === 'professional' ? 'bg-gray-100 text-gray-700 ring-gray-300 focus:ring-orange-500' : 'bg-white/10 dark:bg-black/20 text-gray-700 dark:text-gray-300 ring-white/10 dark:ring-black/20 focus:ring-purple-500'}`}
+                                    >
+                                        <option value="date">Date</option>
+                                        <option value="score">Score</option>
+                                        <option value="topic">Topic</option>
+                                    </select>
+                                    <label htmlFor="sort-order" className="sr-only">Sort order</label>
+                                    <select
+                                        id="sort-order"
+                                        value={sortOrder}
+                                        onChange={e => setSortOrder(e.target.value as SortOrder)}
+                                        className={`rounded-md border-0 py-1 pl-2 pr-7 ring-1 ring-inset focus:ring-2 transition-colors ${theme === 'professional' ? 'bg-gray-100 text-gray-700 ring-gray-300 focus:ring-orange-500' : 'bg-white/10 dark:bg-black/20 text-gray-700 dark:text-gray-300 ring-white/10 dark:ring-black/20 focus:ring-purple-500'}`}
+                                    >
+                                        <option value="desc">Descending</option>
+                                        <option value="asc">Ascending</option>
+                                    </select>
+                                </div>
+                            </div>
                             <ul className="space-y-3">
-                                {progress.map(attempt => (
+                                {sortedProgress.map(attempt => (
                                     <li key={attempt.id} className={`rounded-lg border transition-shadow hover:shadow-md ${theme === 'professional' ? 'bg-white border-gray-200' : 'bg-white/50 dark:bg-black/30 border-black/10 dark:border-white/15'}`}>
                                         <button 
                                             className="p-3 w-full flex justify-between items-center cursor-pointer text-left"
@@ -303,12 +348,11 @@ const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultCh
                                             aria-controls={`attempt-${attempt.id}`}
                                         >
                                             <div>
-                                                <p className="font-semibold">{new Date(attempt.date).toLocaleString()}</p>
-                                                <p className={`text-sm ${theme === 'professional' ? 'text-gray-600' : 'text-gray-600 dark:text-gray-400'}`}>{attempt.difficulty} &bull; {formatTime(attempt.timeTaken)}</p>
+                                                <p className="font-semibold">{attempt.topic || 'General Quiz'}</p>
+                                                <p className={`text-sm ${theme === 'professional' ? 'text-gray-600' : 'text-gray-600 dark:text-gray-400'}`}>{new Date(attempt.date).toLocaleString()} &bull; {attempt.difficulty} &bull; {formatTime(attempt.timeTaken)}</p>
                                             </div>
                                             <div className="text-right">
                                                 <p className="font-bold text-lg">{attempt.score} / {attempt.totalQuestions}</p>
-                                                {/* Fix: Added check for attempt.totalQuestions > 0 to prevent division by zero. */}
                                                 <p className={`text-sm ${theme === 'professional' ? 'text-gray-600' : 'text-gray-600 dark:text-gray-400'}`}>{((attempt.totalQuestions > 0 ? attempt.score / attempt.totalQuestions : 0) * 100).toFixed(0)}%</p>
                                             </div>
                                         </button>

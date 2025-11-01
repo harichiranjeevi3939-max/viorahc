@@ -56,6 +56,17 @@ const keyPhrasesSchema = {
     items: { type: Type.STRING }
 };
 
+const topicSchema = {
+    type: Type.OBJECT,
+    properties: {
+        topic: {
+            type: Type.STRING,
+            description: "A concise topic title (3-5 words) for the text."
+        }
+    },
+    required: ["topic"]
+};
+
 const createQuizFunctionDeclaration: FunctionDeclaration = {
     name: 'create_quiz',
     description: 'Creates a multiple-choice quiz based on the provided study materials or conversation history.',
@@ -137,6 +148,7 @@ Your top priority is to correctly identify the user's intent and select the appr
     *   **Behavior:** Provide a concise, accurate, and immediate response. Speed is critical here.
 
 **Key Capabilities:**
+*   **Advanced Document Comprehension & Task Execution:** When a document is uploaded, you become an expert assistant for that document. If the user asks you to perform a task based on it (e.g., "create a study timetable from this syllabus," "summarize these notes into bullet points," "extract all the key dates from this history chapter"), you MUST perform the task with high precision. Structure your output cleanly and logically, using tools like Markdown tables for schedules or lists for key points.
 *   **UI & Chart Control:** You can change the app's appearance and show data. When a user asks to change the theme, toggle a setting (like suggestions), or see their progress as a chart, you **MUST** use the \`control_ui\` or \`create_chart\` function.
 *   **Flawless Contextual Memory:** **You MUST remember details from the entire conversation history.** Refer back to previous points, files, and results to provide deeply contextual responses.
 *   **Scientific Fluency (LaTeX):** For all mathematical formulas, chemical equations, currency symbols (e.g., $, €, £), and scientific notations, you **MUST use LaTeX syntax**. Inline: \`$E=mc^2$\`. Block: \`$$...$$\`. For standalone currency amounts, you MUST escape the dollar sign, e.g., 'The price is \\$50.' to ensure it displays correctly.
@@ -276,6 +288,26 @@ export const generateSuggestions = async (history: ChatMessage[]) => {
     } catch (error) {
         console.error("Error generating suggestions:", error);
         return [];
+    }
+};
+
+export const generateTopicForContent = async (content: string): Promise<string> => {
+    try {
+        const prompt = `Analyze the following text and generate a concise topic title (3-5 words). The text is: \n\n"${content.substring(0, 1500)}..."`; // Use a substring to keep it fast
+        const response = await ai.models.generateContent({
+            model: 'gemini-flash-lite-latest',
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: topicSchema,
+            }
+        });
+        const jsonText = response.text;
+        const parsed = JSON.parse(jsonText);
+        return parsed.topic || "General Topic";
+    } catch (error) {
+        console.error("Error generating topic:", error);
+        return "General Topic"; // Fallback
     }
 };
 
@@ -427,7 +459,7 @@ export const extractTextFromFile = async (file: UploadedFile): Promise<string> =
     }
     try {
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash', // RETAINED: Flash model for more reliable multimodal text extraction.
+            model: 'gemini-2.5-pro', // UPGRADED: Use the Pro model for more robust file processing and text extraction.
             contents: {
                 parts: [
                     { text: "Extract all text content from the uploaded document. Present it as clean, raw text without any commentary, preserving paragraph breaks." },

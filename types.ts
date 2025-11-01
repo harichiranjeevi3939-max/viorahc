@@ -48,6 +48,7 @@ export interface QuizAttempt {
   results: UserAnswer[];
   sourceContent: string; // Used for "Continue Quiz" feature
   timeTaken: number; // in seconds
+  topic?: string;
 }
 
 export interface AppSettings {
