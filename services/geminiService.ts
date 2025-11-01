@@ -2,7 +2,7 @@
 import { GoogleGenAI, Type, Modality, FunctionDeclaration, LiveServerMessage } from "@google/genai";
 import type { UploadedFile, ChatMessage, GeminiResponse, GroupChatMessage, VioraPersonality } from '../types';
 
-// Fix: The API key must be obtained from process.env.API_KEY per coding guidelines.
+// Fix: Per coding guidelines, initialize GoogleGenAI with process.env.API_KEY directly.
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 const testSchema = {
@@ -365,12 +365,10 @@ export const generateExplanation = async (topic: string) => {
             });
             return response.text;
         } else {
+             // Fix: Removed thinkingConfig as it is not supported by this model.
              const response = await ai.models.generateContent({
                 model: 'gemini-flash-lite-latest',
                 contents: `Act as a helpful tutor. Provide a very concise and clear explanation for the following term or phrase in under 5 seconds. Use simple language. The topic is: "${topic}"`,
-                config: {
-                    thinkingConfig: { thinkingBudget: 0 }
-                }
             });
             return response.text;
         }

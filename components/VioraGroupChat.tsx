@@ -121,21 +121,17 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
     }, [loadSavedGroups]);
     
     // This effect manages the storage event listener and component cleanup logic.
-    // It depends on `session` to ensure its closures always have the latest session data.
     useEffect(() => {
         const handleStorage = (e: StorageEvent) => {
-            // Check for updates to the current session from other tabs
             if (session && e.key === `${GROUP_CHAT_KEY_PREFIX}${session.id}`) {
                 const updatedSession = getGroupSession(session.id);
                 if (updatedSession) {
                     setSession(updatedSession);
                 } else {
-                    // Session was deleted remotely (e.g., by host)
                     setError("The host has ended the session.");
                     setTimeout(resetToLanding, 2000);
                 }
             }
-            // Check for updates to the list of saved groups
             if (e.key === SAVED_GROUPS_KEY) {
                 loadSavedGroups();
             }
@@ -147,22 +143,18 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
             setActiveGroupId(session.id);
         }
 
-        // The component's unmount cleanup function
         return () => {
             window.removeEventListener('storage', handleStorage);
             clearActiveGroupId();
 
-            // Perform a "quiet leave" when the component unmounts (e.g., window close)
             if (session && userId) {
                 const sessionOnDisk = getGroupSession(session.id);
                 if (sessionOnDisk) {
                      if (sessionOnDisk.hostId === userId) {
-                        // If the host leaves, the session is ended for everyone.
                         localStorage.removeItem(`${GROUP_CHAT_KEY_PREFIX}${session.id}`);
                         removeSavedGroup(session.id);
                         window.dispatchEvent(new StorageEvent('storage', { key: `${GROUP_CHAT_KEY_PREFIX}${session.id}`, newValue: null }));
                      } else {
-                        // If a member leaves, just remove them from the session.
                         sessionOnDisk.members = sessionOnDisk.members.filter(m => m.userId !== userId);
                         saveGroupSession(sessionOnDisk);
                      }

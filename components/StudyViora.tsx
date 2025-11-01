@@ -198,7 +198,6 @@ const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, on
 
                 unsupportedFiles.push(file.name);
                 return null;
-            // Fix: Replaced unsafe property access on 'unknown' error type with a type guard.
             } catch (e) {
                 const message = e instanceof Error ? e.message : String(e);
                 console.error(`Error processing file ${file.name}:`, message);
@@ -254,7 +253,6 @@ const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, on
             setUserAnswers(new Map());
             setTestResults([]);
             setMode('test');
-        // Fix: Replaced unsafe property access on 'unknown' error type with a type guard.
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             setMode('chat');
@@ -413,7 +411,6 @@ const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, on
             setFlashcards(generatedFlashcards);
             setFlippedCard(null);
             setMode('flashcards');
-        // Fix: Replaced unsafe property access on 'unknown' error type with a type guard.
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             setMode('chat');

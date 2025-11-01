@@ -128,23 +128,22 @@ const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultCh
         return acc;
     }, {} as Record<'Basic' | 'Standard' | 'Hard', number>);
     
-    // Fix: Refactored to avoid side effects in .map() for better code clarity and to resolve potential linter issues.
-    const difficultyData = (() => {
+    const pieChartData = (() => {
+        const dataWithPercent = Object.entries(difficultyCounts).map(([key, value]) => ({
+            key,
+            value,
+            percent: totalQuizzes > 0 ? (value / totalQuizzes) * 100 : 0,
+            color: colors.difficulty[key as keyof typeof colors.difficulty],
+        }));
+
         let cumulativePercent = 0;
-        return Object.entries(difficultyCounts).map(([key, value]) => {
-            const percent = totalQuizzes > 0 ? (value / totalQuizzes) * 100 : 0;
-            const color = colors.difficulty[key as keyof typeof colors.difficulty];
-            const result = {
-                key,
-                value,
-                percent,
-                color,
-                startAngle: (cumulativePercent / 100) * 360,
-                endAngle: ((cumulativePercent + percent) / 100) * 360,
+        return dataWithPercent.map(data => {
+            const startAngle = (cumulativePercent / 100) * 360;
+            cumulativePercent += data.percent;
+            return {
+                ...data,
+                startAngle,
             };
-            // Fix: Corrected a logical error where the cumulative percentage was not being updated, causing the pie chart to render incorrectly.
-            cumulativePercent += percent;
-            return result;
         });
     })();
     
@@ -156,7 +155,7 @@ const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultCh
                 <div className="flex justify-center items-center gap-6">
                     <div className="relative w-28 h-28">
                         <svg viewBox="0 0 36 36" className="w-full h-full transform -rotate-90">
-                            {difficultyData.map(d => (
+                            {pieChartData.map(d => (
                                 <circle
                                     key={d.key}
                                     cx="18"
@@ -183,7 +182,7 @@ const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultCh
                         </div>
                     </div>
                     <ul className="space-y-1 text-sm">
-                        {difficultyData.length > 0 ? difficultyData.map(d => (
+                        {pieChartData.length > 0 ? pieChartData.map(d => (
                             <li key={d.key} className="flex items-center cursor-pointer" onMouseEnter={() => setHoveredDifficulty(d.key)} onMouseLeave={() => setHoveredDifficulty(null)}>
                                 <span className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: d.color }}></span>
                                 <span>{d.key}: <strong>{d.value}</strong></span>
