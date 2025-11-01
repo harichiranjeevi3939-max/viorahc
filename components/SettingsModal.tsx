@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import type { AppSettings } from '../types';
+import type { AppSettings, VioraPersonality } from '../types';
 import type { Theme } from '../App';
 import { CloseIcon } from './icons';
 
@@ -36,6 +36,43 @@ const ToggleSwitch: React.FC<ToggleProps> = ({ id, label, description, checked, 
         </div>
     </div>
 );
+
+const PersonalitySelector: React.FC<{
+    theme: Theme;
+    current: VioraPersonality;
+    onChange: (personality: VioraPersonality) => void;
+}> = ({ theme, current, onChange }) => {
+    const personalities: { id: VioraPersonality; label: string; description: string; }[] = [
+        { id: 'classic', label: 'Viora Classic', description: 'The default balanced and encouraging tutor.' },
+        { id: 'analytical', label: 'Analytical', description: 'Precise, logical, and data-driven.' },
+        { id: 'creative', label: 'Creative', description: 'Imaginative, using analogies and stories.' },
+        { id: 'concise', label: 'Concise', description: 'Fast, direct, and straight to the point.' },
+    ];
+    return (
+        <div className="py-4">
+            <h3 className="font-semibold block">AI Personality</h3>
+            <p className="text-sm text-gray-500 mb-2">Choose how Viora interacts with you.</p>
+            <div className="space-y-2">
+                {personalities.map(p => (
+                    <label key={p.id} className={`flex items-center p-3 rounded-lg cursor-pointer border transition-colors ${current === p.id ? (theme === 'professional' ? 'bg-orange-500/10 border-orange-500' : 'bg-purple-500/10 border-purple-500') : (theme === 'professional' ? 'bg-gray-100 border-gray-200 hover:bg-gray-200' : 'bg-white/5 dark:bg-black/20 border-transparent hover:bg-white/10 dark:hover:bg-black/30')}`}>
+                        <input
+                            type="radio"
+                            name="personality"
+                            value={p.id}
+                            checked={current === p.id}
+                            onChange={() => onChange(p.id)}
+                            className={`w-4 h-4 mr-3 ${theme === 'professional' ? 'text-orange-600 focus:ring-orange-500' : 'text-purple-600 focus:ring-purple-500'}`}
+                        />
+                        <div>
+                            <span className="font-medium">{p.label}</span>
+                            <p className={`text-xs ${theme === 'professional' ? 'text-gray-600' : 'text-gray-400'}`}>{p.description}</p>
+                        </div>
+                    </label>
+                ))}
+            </div>
+        </div>
+    )
+};
 
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, theme, settings, onSettingsChange }) => {
@@ -80,7 +117,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, theme, settings,
         };
     }, [onClose]);
     
-    const handleSettingChange = (id: keyof AppSettings, value: boolean) => {
+    const handleSettingChange = (id: keyof AppSettings, value: boolean | VioraPersonality) => {
         onSettingsChange(prev => ({...prev, [id]: value}));
     };
 
@@ -91,27 +128,32 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, theme, settings,
                     <h2 className="text-xl font-bold">Settings</h2>
                     <button onClick={onClose} className={`p-1 rounded-full ${theme === 'professional' ? 'hover:bg-gray-500/10' : 'hover:bg-black/10 dark:hover:bg-white/10'}`}><CloseIcon/></button>
                 </div>
-                <div className="p-6 divide-y">
+                <div className="p-6 divide-y divide-gray-200 dark:divide-white/10">
+                    <PersonalitySelector 
+                        theme={theme}
+                        current={settings.personality}
+                        onChange={(p) => handleSettingChange('personality', p)}
+                    />
                     <ToggleSwitch 
                         id="autoTheme"
                         label="Auto Theme Switching"
                         description="Automatically switch between light/dark themes based on time of day."
                         checked={settings.autoTheme}
-                        onChange={handleSettingChange}
+                        onChange={handleSettingChange as (id: keyof AppSettings, value: boolean) => void}
                     />
                     <ToggleSwitch 
                         id="showSuggestions"
                         label="AI Suggestions"
                         description="Show 'Next Step' suggestions after Viora's responses."
                         checked={settings.showSuggestions}
-                        onChange={handleSettingChange}
+                        onChange={handleSettingChange as (id: keyof AppSettings, value: boolean) => void}
                     />
                     <ToggleSwitch 
                         id="showRetryQuiz"
                         label="Show 'Retry Last Quiz' Button"
                         description="Display a shortcut button to retry your most recent quiz."
                         checked={settings.showRetryQuiz}
-                        onChange={handleSettingChange}
+                        onChange={handleSettingChange as (id: keyof AppSettings, value: boolean) => void}
                     />
                 </div>
             </div>

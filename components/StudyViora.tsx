@@ -2,12 +2,12 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { generateChatResponse, generateTest, generateExplanation, generateFlashcards, generateSummary, generateSuggestions, generateSpeech, extractTextFromFile, generateTopicForContent } from '../services/geminiService';
 import VioraReader from './VioraReader';
 import LiveConversation from './LiveConversation';
-import type { ChatMessage, MCQ, Flashcard, UploadedFile, UserAnswer, QuizAttempt, AppSettings } from '../types';
+import type { ChatMessage, MCQ, Flashcard, UploadedFile, UserAnswer, QuizAttempt, AppSettings, VioraPersonality } from '../types';
 import { fileToBase64 } from '../utils/fileUtils';
 import { decode, decodeAudioData } from '../utils/audioUtils';
 import { saveQuizAttempt, getStudyProgress, getChatHistory, saveChatHistory } from '../utils/localStorageUtils';
 import { MarkdownRenderer } from '../utils/markdownUtils';
-import { SendIcon, UploadIcon, CloseIcon, HumanBrainIcon, BrainCircuitIcon, CheckCircleIcon, XCircleIcon, FileTextIcon, UserIcon, SummarizeIcon, Volume2Icon, StopCircleIcon, MicrophoneIcon } from './icons';
+import { SendIcon, UploadIcon, CloseIcon, HumanBrainIcon, BrainCircuitIcon, CheckCircleIcon, XCircleIcon, FileTextIcon, UserIcon, SummarizeIcon, Volume2Icon, StopCircleIcon, MicrophoneIcon, LightbulbIcon, ConciseIcon } from './icons';
 import type { Theme } from '../App';
 
 declare const mammoth: any;
@@ -177,10 +177,10 @@ const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, on
 
                 unsupportedFiles.push(file.name);
                 return null;
+// Fix: Replaced unsafe type assertion with a type guard to safely handle unknown error types.
             } catch (e) {
-                // Fix: Cast the unknown error type to Error to safely access the message property.
-                const error = e as Error;
-                console.error(`Error processing file ${file.name}:`, error.message);
+                const message = e instanceof Error ? e.message : String(e);
+                console.error(`Error processing file ${file.name}:`, message);
                 unsupportedFiles.push(`${file.name} (processing failed)`);
                 return null;
             }
@@ -223,7 +223,7 @@ const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, on
 
     const handleGenerateTestFromContent = useCallback(async (content: string, questionCount: number = 10, difficulty: Difficulty = 'Standard') => {
         setIsLoading(true);
-        setMessages(prev => [...prev.filter(m => m.id !== 'loading'), { id: self.crypto.randomUUID(), role: 'system', text: `Alright! I'm creating a ${questionCount}-question, ${difficulty}-level quiz for you now...` }]);
+        setMessages(prev => [...prev.filter(m => m.id !== 'loading'), { id: self.crypto.randomUUID(), role: 'system', text: `Viora's ${settings.personality} persona is rapidly crafting your ${difficulty} quiz...` }]);
         setCurrentQuizContext({ content, difficulty });
         setQuizStartTime(Date.now());
 
@@ -234,14 +234,14 @@ const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, on
             setTestResults([]);
             setMode('test');
         } catch (error) {
-            // Fix: Cast the unknown error type to Error to safely access the message property.
-            const err = error as Error;
+            // Fix: Replaced unsafe type assertion with a type guard to safely handle unknown error types.
+            const message = error instanceof Error ? error.message : String(error);
             setMode('chat');
-            setMessages(prev => [...prev, { id: self.crypto.randomUUID(), role: 'system', text: `Error generating test: ${err.message}` }]);
+            setMessages(prev => [...prev, { id: self.crypto.randomUUID(), role: 'system', text: `Error generating test: ${message}` }]);
         } finally {
             setIsLoading(false);
         }
-    }, []);
+    }, [settings.personality]);
     
     const handleSendMessage = useCallback(async (messageText?: string) => {
         const textToSend = typeof messageText === 'string' ? messageText : input.trim();
@@ -277,7 +277,7 @@ const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, on
         setInput('');
         setUploadedFiles([]);
 
-        const response = await generateChatResponse(textToSend, currentFiles, chatHistoryForAPI);
+        const response = await generateChatResponse(textToSend, currentFiles, chatHistoryForAPI, settings.personality);
         
         if (response.type === 'function_call') {
              if (response.name === 'create_quiz') {
@@ -309,8 +309,12 @@ const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, on
                     onSetTheme(value);
                     confirmationText = `Sure, I've switched to the ${value} theme.`;
                 } else if (action === 'set_setting' && settingName) {
-                    onSetSettings(prev => ({...prev, [settingName]: value === 'true'}));
-                    confirmationText = `Okay, I've turned ${settingName.replace('show', '')} ${value === 'true' ? 'on' : 'off'}.`;
+                    onSetSettings(prev => ({...prev, [settingName]: value === 'true' ? true : value === 'false' ? false : value}));
+                    if (settingName === 'personality') {
+                        confirmationText = `Okay, I've switched to my ${value} personality. How can I help you now?`;
+                    } else {
+                        confirmationText = `Okay, I've turned ${settingName.replace('show', '')} ${value === 'true' ? 'on' : 'off'}.`;
+                    }
                 }
 
                 setMessages(prev => [...prev.filter(m => m.id !== 'loading'), { id: self.crypto.randomUUID(), role: 'system', text: confirmationText }]);
@@ -329,12 +333,12 @@ const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, on
         setMessages(tempMessages.map(m => ({ ...m, suggestions: [] }))); // Clear old suggestions
         setIsLoading(false);
         
-        if (settings.showSuggestions) {
+        if (settings.showSuggestions && settings.personality !== 'concise') { // No suggestions for concise personality
             const suggestions = await generateSuggestions(tempMessages);
             setMessages(prev => prev.map(m => m.id === modelMessage.id ? { ...m, suggestions: suggestions } : m));
         }
 
-    }, [input, uploadedFiles, messages, handleGenerateTestFromContent, onSetTheme, onSetSettings, settings.showSuggestions, onShowProgress]);
+    }, [input, uploadedFiles, messages, handleGenerateTestFromContent, onSetTheme, onSetSettings, settings.showSuggestions, settings.personality, onShowProgress]);
 
     const handleSuggestionClick = (suggestion: string) => {
         if(suggestion === "Open in Reader" && uploadedFiles.length > 0) {
@@ -389,9 +393,10 @@ const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, on
             setFlippedCard(null);
             setMode('flashcards');
         } catch (error) {
-            const err = error as Error;
+            // Fix: The user reported multiple errors related to unsafe error handling. This catch block used an unsafe type assertion. It has been updated to safely handle errors of unknown type.
+            const message = error instanceof Error ? error.message : String(error);
             setMode('chat');
-            setMessages(prev => [...prev, { id: self.crypto.randomUUID(), role: 'system', text: `Error generating flashcards: ${err.message}` }]);
+            setMessages(prev => [...prev, { id: self.crypto.randomUUID(), role: 'system', text: `Error generating flashcards: ${message}` }]);
         } finally {
             setIsLoading(false);
         }
@@ -486,6 +491,25 @@ const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, on
     const handleShuffleFlashcards = () => {
         setFlashcards(prev => [...prev].sort(() => Math.random() - 0.5));
     };
+    
+    const PersonalityIndicator: React.FC = () => {
+        const personalityInfo: Record<VioraPersonality, { Icon: React.FC<any>; label: string; }> = {
+            classic: { Icon: HumanBrainIcon, label: 'Classic' },
+            analytical: { Icon: BrainCircuitIcon, label: 'Analytical' },
+            creative: { Icon: LightbulbIcon, label: 'Creative' },
+            concise: { Icon: ConciseIcon, label: 'Concise' },
+        };
+
+        const { Icon, label } = personalityInfo[settings.personality];
+
+        return (
+            <div className={`absolute bottom-full left-2 mb-2 px-2 py-1 flex items-center gap-1.5 text-xs rounded-full border transition-all ${theme === 'professional' ? 'bg-white border-gray-200' : 'bg-black/20 border-white/10'}`}>
+                <Icon className="w-3.5 h-3.5" theme={theme} />
+                <span className={`font-medium ${theme === 'professional' ? 'text-gray-600' : 'text-gray-300'}`}>{label}</span>
+            </div>
+        )
+    };
+
 
     const renderChat = () => (
         <>
@@ -626,6 +650,7 @@ const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, on
                         </div>
                     )}
                     <div className={`relative flex items-end gap-2 p-2 rounded-2xl shadow-lg transition-colors duration-300 ${theme === 'professional' ? 'bg-white/95 border border-gray-200' : 'bg-white/60 dark:bg-black/40 border border-black/10 dark:border-white/15'}`}>
+                        <PersonalityIndicator />
                         <button onClick={() => fileInputRef.current?.click()} disabled={processingFiles.length > 0} className={`p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${theme === 'professional' ? 'text-gray-500 hover:text-gray-800' : 'text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white'}`} title="Upload File">
                             <UploadIcon className="w-6 h-6" />
                         </button>

@@ -51,10 +51,13 @@ export interface QuizAttempt {
   topic?: string;
 }
 
+export type VioraPersonality = 'classic' | 'analytical' | 'creative' | 'concise';
+
 export interface AppSettings {
   autoTheme: boolean;
   showSuggestions: boolean;
   showRetryQuiz: boolean;
+  personality: VioraPersonality;
 }
 
 // Viora Group Chat Types

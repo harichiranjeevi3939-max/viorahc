@@ -128,22 +128,24 @@ const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultCh
         return acc;
     }, {} as Record<'Basic' | 'Standard' | 'Hard', number>);
     
-    // Fix: Explicitly type `cumulativePercent` as a number to avoid potential type inference issues.
-    let cumulativePercent: number = 0;
-    const difficultyData = Object.entries(difficultyCounts).map(([key, value]) => {
-        const percent = totalQuizzes > 0 ? (value / totalQuizzes) * 100 : 0;
-        const color = colors.difficulty[key as keyof typeof colors.difficulty];
-        const result = {
-            key,
-            value,
-            percent,
-            color,
-            startAngle: (cumulativePercent / 100) * 360,
-            endAngle: ((cumulativePercent + percent) / 100) * 360,
-        };
-        cumulativePercent += percent;
-        return result;
-    });
+    // Fix: Refactored to avoid side effects in .map() for better code clarity and to resolve potential linter issues.
+    const difficultyData = (() => {
+        let cumulativePercent = 0;
+        return Object.entries(difficultyCounts).map(([key, value]) => {
+            const percent = totalQuizzes > 0 ? (value / totalQuizzes) * 100 : 0;
+            const color = colors.difficulty[key as keyof typeof colors.difficulty];
+            const result = {
+                key,
+                value,
+                percent,
+                color,
+                startAngle: (cumulativePercent / 100) * 360,
+                endAngle: ((cumulativePercent + percent) / 100) * 360,
+            };
+            cumulativePercent += percent;
+            return result;
+        });
+    })();
     
     const recentScores = progress.slice(0, 7).reverse();
 
@@ -163,7 +165,7 @@ const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultCh
                                     stroke={d.color}
                                     strokeWidth="4"
                                     strokeDasharray={`${d.percent} 100`}
-                                    strokeDashoffset={0 - (d.startAngle * 100 / 360)}
+                                    strokeDashoffset={-(d.startAngle * 100 / 360)}
                                     className={`transition-all duration-300 ${hoveredDifficulty === d.key ? 'opacity-100' : 'opacity-70'}`}
                                 />
                             ))}

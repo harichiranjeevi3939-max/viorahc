@@ -9,6 +9,7 @@ const defaultSettings: AppSettings = {
     autoTheme: true,
     showSuggestions: true,
     showRetryQuiz: true,
+    personality: 'classic',
 };
 
 export const getAppSettings = (): AppSettings => {
