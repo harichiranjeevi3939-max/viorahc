@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { generateGroupChatResponse } from '../services/geminiService';
-import { HumanBrainIcon, SendIcon, CloseIcon, UsersIcon, UserIcon, MicOffIcon, MicrophoneIcon } from './icons';
+import { HumanBrainIcon, SendIcon, CloseIcon, UsersIcon, UserIcon, ClipboardListIcon, LayersIcon, CheckCircleIcon, XCircleIcon } from './icons';
 import { MarkdownRenderer } from '../utils/markdownUtils';
 import type { Theme } from '../App';
-import type { GroupChatSession, GroupChatMessage, GroupChatMember } from '../types';
+import type { GroupChatSession, GroupChatMessage, GroupChatMember, QuizPayload, FlashcardPayload, MCQ, Flashcard, UserAnswer } from '../types';
+import { getOrSetUserId, setActiveGroupId, clearActiveGroupId } from '../utils/localStorageUtils';
+
 
 // --- LocalStorage "Backend" Simulation ---
 const GROUP_CHAT_KEY_PREFIX = 'viora-group-chat-';
@@ -14,7 +16,7 @@ const generateGroupId = (): string => {
     return String(Math.floor(1000 + Math.random() * 9000));
 };
 
-const getGroupSession = (groupId: string): GroupChatSession | null => {
+export const getGroupSession = (groupId: string): GroupChatSession | null => {
     try {
         const data = localStorage.getItem(`${GROUP_CHAT_KEY_PREFIX}${groupId}`);
         return data ? JSON.parse(data) : null;
@@ -23,7 +25,7 @@ const getGroupSession = (groupId: string): GroupChatSession | null => {
     }
 };
 
-const saveGroupSession = (session: GroupChatSession) => {
+export const saveGroupSession = (session: GroupChatSession) => {
     try {
         localStorage.setItem(`${GROUP_CHAT_KEY_PREFIX}${session.id}`, JSON.stringify(session));
         // Dispatch a storage event to notify other tabs/windows
@@ -95,68 +97,87 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
     const positionRef = useRef({ x: 0, y: 0 });
     const offsetRef = useRef({ x: 0, y: 0 });
 
-    useEffect(() => {
-        setUserId(self.crypto.randomUUID());
+    // For shared content modals
+    const [activeQuiz, setActiveQuiz] = useState<QuizPayload | null>(null);
+    const [activeFlashcards, setActiveFlashcards] = useState<FlashcardPayload | null>(null);
+
+    const loadSavedGroups = useCallback(() => {
+        const groupIds = getSavedGroups();
+        const groups = groupIds.map(getGroupSession).filter(Boolean) as GroupChatSession[];
+        setSavedGroups(groups);
+    }, []);
+
+    const resetToLanding = useCallback(() => {
+        setSession(null);
+        setJoinCodeInput('');
+        setView('landing');
         loadSavedGroups();
-        
+    }, [loadSavedGroups]);
+
+    // This effect runs once on mount to initialize user and load saved groups.
+    useEffect(() => {
+        setUserId(getOrSetUserId());
+        loadSavedGroups();
+    }, [loadSavedGroups]);
+    
+    // This effect manages the storage event listener and component cleanup logic.
+    // It depends on `session` to ensure its closures always have the latest session data.
+    useEffect(() => {
         const handleStorage = (e: StorageEvent) => {
+            // Check for updates to the current session from other tabs
             if (session && e.key === `${GROUP_CHAT_KEY_PREFIX}${session.id}`) {
                 const updatedSession = getGroupSession(session.id);
-                setSession(updatedSession);
+                if (updatedSession) {
+                    setSession(updatedSession);
+                } else {
+                    // Session was deleted remotely (e.g., by host)
+                    setError("The host has ended the session.");
+                    setTimeout(resetToLanding, 2000);
+                }
             }
-             if (e.key === SAVED_GROUPS_KEY) {
+            // Check for updates to the list of saved groups
+            if (e.key === SAVED_GROUPS_KEY) {
                 loadSavedGroups();
             }
         };
+        
         window.addEventListener('storage', handleStorage);
-
-        return () => {
-            if (session && userId) {
-                handleLeaveGroup(true); // Quiet leave
-            }
-            window.removeEventListener('storage', handleStorage);
-        };
-    }, []);
-    
-     useEffect(() => {
+        
         if (session) {
-            const handleStorageUpdate = (event: StorageEvent) => {
-                if (event.key === `${GROUP_CHAT_KEY_PREFIX}${session.id}`) {
-                    const updatedSession = JSON.parse(event.newValue || 'null') as GroupChatSession | null;
-                    if (updatedSession) {
-                        setSession(updatedSession);
-                    } else {
-                        // Session was deleted, kick user out
-                        setError("The host has ended the session.");
-                        setTimeout(resetToLanding, 2000);
-                    }
-                }
-            };
-            window.addEventListener('storage', handleStorageUpdate);
-            return () => window.removeEventListener('storage', handleStorageUpdate);
+            setActiveGroupId(session.id);
         }
-    }, [session]);
+
+        // The component's unmount cleanup function
+        return () => {
+            window.removeEventListener('storage', handleStorage);
+            clearActiveGroupId();
+
+            // Perform a "quiet leave" when the component unmounts (e.g., window close)
+            if (session && userId) {
+                const sessionOnDisk = getGroupSession(session.id);
+                if (sessionOnDisk) {
+                     if (sessionOnDisk.hostId === userId) {
+                        // If the host leaves, the session is ended for everyone.
+                        localStorage.removeItem(`${GROUP_CHAT_KEY_PREFIX}${session.id}`);
+                        removeSavedGroup(session.id);
+                        window.dispatchEvent(new StorageEvent('storage', { key: `${GROUP_CHAT_KEY_PREFIX}${session.id}`, newValue: null }));
+                     } else {
+                        // If a member leaves, just remove them from the session.
+                        sessionOnDisk.members = sessionOnDisk.members.filter(m => m.userId !== userId);
+                        saveGroupSession(sessionOnDisk);
+                     }
+                }
+            }
+        };
+    }, [session, userId, loadSavedGroups, resetToLanding]);
     
     useEffect(() => {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [session?.messages]);
 
-    const loadSavedGroups = () => {
-        const groupIds = getSavedGroups();
-        const groups = groupIds.map(getGroupSession).filter(Boolean) as GroupChatSession[];
-        setSavedGroups(groups);
-    };
-    
     const handleNameChange = (name: string) => {
         setUserName(name);
         localStorage.setItem('viora-username', name);
-    };
-
-    const resetToLanding = () => {
-        setSession(null);
-        setJoinCodeInput('');
-        setView('landing');
-        loadSavedGroups();
     };
 
     const handleCreateGroup = () => {
@@ -176,6 +197,7 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
                 userName: 'System',
                 text: `${userName} created the group. Call me Viora when you need help!`,
                 timestamp: Date.now(),
+                type: 'system',
             }],
             groupIcon: newGroupId,
         };
@@ -214,7 +236,8 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
                 userId: 'system',
                 userName: 'System',
                 text: `${userName} has joined the chat.`,
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                type: 'system',
             });
         }
         
@@ -242,7 +265,8 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
                             userId: 'system',
                             userName: 'System',
                             text: `${userName} has left the chat.`,
-                            timestamp: Date.now()
+                            timestamp: Date.now(),
+                            type: 'system',
                         });
                     }
                     saveGroupSession(currentSession);
@@ -262,6 +286,7 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
             userName,
             text: messageInput.trim(),
             timestamp: Date.now(),
+            type: 'text',
         };
 
         const updatedSession = { ...session, messages: [...session.messages, newMessage] };
@@ -280,7 +305,8 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
                 userName: 'Viora',
                 text: vioraResponseText,
                 timestamp: Date.now(),
-                isViora: true
+                isViora: true,
+                type: 'text',
             };
             
             // Refetch session to not overwrite messages sent while Viora was thinking
@@ -461,27 +487,76 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {session!.messages.map(msg => {
-                    if (msg.userId === 'system') {
+                    const isSelf = msg.userId === userId;
+                    if (msg.type === 'system') {
                         return <p key={msg.id} className="text-center text-xs text-gray-500 italic py-2">{msg.text}</p>
                     }
-                    const isSelf = msg.userId === userId;
-                    return (
-                        <div key={msg.id} className={`flex items-end gap-2 ${isSelf ? 'justify-end' : ''}`}>
-                             {!isSelf && (
-                                <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center font-bold text-sm ${msg.isViora ? 'bg-purple-500/20' : 'bg-gray-300 dark:bg-gray-600'}`} title={msg.userName}>
-                                    {msg.isViora ? <HumanBrainIcon theme={theme} className="w-5 h-5"/> : msg.userName.charAt(0).toUpperCase()}
+                    if (msg.type === 'quiz' && msg.payload) {
+                        const payload = msg.payload as QuizPayload;
+                        return (
+                             <div key={msg.id} className="flex items-end gap-2">
+                                <div className="w-8 h-8 rounded-full bg-gray-300 dark:bg-gray-600 flex-shrink-0 flex items-center justify-center font-bold text-sm" title={msg.userName}>
+                                    {msg.userName.charAt(0).toUpperCase()}
                                 </div>
-                            )}
-                            <div className={`max-w-xs md:max-w-md p-3 rounded-2xl shadow-sm ${
-                                isSelf ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-br-lg' : 
-                                msg.isViora ? (theme === 'professional' ? 'bg-white border border-gray-200' : 'bg-purple-500/20 backdrop-blur-md') : 
-                                (theme === 'professional' ? 'bg-white border border-gray-200' : 'bg-white/10 dark:bg-black/20 backdrop-blur-md')
-                            }`}>
-                                {!isSelf && <p className={`text-xs font-bold mb-1 ${msg.isViora ? (theme === 'professional' ? 'text-orange-600' : 'text-purple-400') : (theme === 'professional' ? 'text-gray-600' : 'text-gray-400')}`}>{msg.userName}</p>}
-                                <MarkdownRenderer text={msg.text} />
+                                <div className={`max-w-xs md:max-w-md p-3 rounded-2xl shadow-sm ${theme === 'professional' ? 'bg-white border border-gray-200' : 'bg-white/10 dark:bg-black/20 backdrop-blur-md'}`}>
+                                    <p className={`text-xs font-bold mb-1 ${theme === 'professional' ? 'text-gray-600' : 'text-gray-400'}`}>{msg.userName} shared a quiz:</p>
+                                    <div className="flex items-center gap-3">
+                                        <ClipboardListIcon className={`w-10 h-10 flex-shrink-0 ${theme === 'professional' ? 'text-orange-500' : 'text-purple-400'}`} />
+                                        <div>
+                                            <h4 className="font-semibold">{payload.topic}</h4>
+                                            <p className="text-sm">{payload.mcqs.length} Questions &bull; {payload.difficulty}</p>
+                                        </div>
+                                    </div>
+                                    <button onClick={() => setActiveQuiz(payload)} className={`w-full mt-3 p-2 text-sm font-bold text-white rounded-lg transition-opacity hover:opacity-90 ${theme === 'professional' ? 'bg-orange-500' : 'bg-purple-500'}`}>
+                                        Start Quiz
+                                    </button>
+                                </div>
                             </div>
-                        </div>
-                    )
+                        )
+                    }
+                    if (msg.type === 'flashcards' && msg.payload) {
+                        const payload = msg.payload as FlashcardPayload;
+                        return (
+                             <div key={msg.id} className="flex items-end gap-2">
+                                <div className="w-8 h-8 rounded-full bg-gray-300 dark:bg-gray-600 flex-shrink-0 flex items-center justify-center font-bold text-sm" title={msg.userName}>
+                                    {msg.userName.charAt(0).toUpperCase()}
+                                </div>
+                                <div className={`max-w-xs md:max-w-md p-3 rounded-2xl shadow-sm ${theme === 'professional' ? 'bg-white border border-gray-200' : 'bg-white/10 dark:bg-black/20 backdrop-blur-md'}`}>
+                                    <p className={`text-xs font-bold mb-1 ${theme === 'professional' ? 'text-gray-600' : 'text-gray-400'}`}>{msg.userName} shared flashcards:</p>
+                                    <div className="flex items-center gap-3">
+                                        <LayersIcon className={`w-10 h-10 flex-shrink-0 ${theme === 'professional' ? 'text-sky-500' : 'text-indigo-400'}`} />
+                                        <div>
+                                            <h4 className="font-semibold">{payload.topic}</h4>
+                                            <p className="text-sm">{payload.flashcards.length} Cards</p>
+                                        </div>
+                                    </div>
+                                    <button onClick={() => setActiveFlashcards(payload)} className={`w-full mt-3 p-2 text-sm font-bold text-white rounded-lg transition-opacity hover:opacity-90 ${theme === 'professional' ? 'bg-sky-500' : 'bg-indigo-500'}`}>
+                                        View Flashcards
+                                    </button>
+                                </div>
+                            </div>
+                        )
+                    }
+                    if (msg.type === 'text') {
+                        return (
+                            <div key={msg.id} className={`flex items-end gap-2 ${isSelf ? 'justify-end' : ''}`}>
+                                 {!isSelf && (
+                                    <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center font-bold text-sm ${msg.isViora ? 'bg-purple-500/20' : 'bg-gray-300 dark:bg-gray-600'}`} title={msg.userName}>
+                                        {msg.isViora ? <HumanBrainIcon theme={theme} className="w-5 h-5"/> : msg.userName.charAt(0).toUpperCase()}
+                                    </div>
+                                )}
+                                <div className={`max-w-xs md:max-w-md p-3 rounded-2xl shadow-sm ${
+                                    isSelf ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-br-lg' : 
+                                    msg.isViora ? (theme === 'professional' ? 'bg-white border border-gray-200' : 'bg-purple-500/20 backdrop-blur-md') : 
+                                    (theme === 'professional' ? 'bg-white border border-gray-200' : 'bg-white/10 dark:bg-black/20 backdrop-blur-md')
+                                }`}>
+                                    {!isSelf && <p className={`text-xs font-bold mb-1 ${msg.isViora ? (theme === 'professional' ? 'text-orange-600' : 'text-purple-400') : (theme === 'professional' ? 'text-gray-600' : 'text-gray-400')}`}>{msg.userName}</p>}
+                                    <MarkdownRenderer text={msg.text || ''} />
+                                </div>
+                            </div>
+                        )
+                    }
+                    return null;
                 })}
                 {isVioraTyping && (
                     <div className="flex items-end gap-2">
@@ -534,7 +609,124 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
                 style={{ touchAction: 'none' }} // Prevent scrolling on mobile when dragging
             >
                 {view === 'landing' ? renderLanding() : renderChat()}
+                {activeQuiz && <GroupQuizRunner quiz={activeQuiz} onClose={() => setActiveQuiz(null)} theme={theme} />}
+                {activeFlashcards && <GroupFlashcardViewer flashcards={activeFlashcards} onClose={() => setActiveFlashcards(null)} theme={theme} />}
             </div>
+        </div>
+    );
+};
+
+
+// --- In-Chat Activity Modals ---
+
+const GroupQuizRunner: React.FC<{ quiz: QuizPayload; onClose: () => void; theme: Theme }> = ({ quiz, onClose, theme }) => {
+    const [userAnswers, setUserAnswers] = useState<Map<string, string>>(new Map());
+    const [results, setResults] = useState<UserAnswer[] | null>(null);
+
+    const handleAnswerSelect = (question: string, answer: string) => {
+        setUserAnswers(new Map(userAnswers.set(question, answer)));
+    };
+
+    const handleSubmit = () => {
+        const quizResults = quiz.mcqs.map(mcq => {
+            const selected = userAnswers.get(mcq.question) || "";
+            return {
+                question: mcq.question,
+                selectedAnswer: selected,
+                isCorrect: selected === mcq.correctAnswer,
+                correctAnswer: mcq.correctAnswer
+            };
+        });
+        setResults(quizResults);
+    };
+    
+    const score = results ? results.filter(r => r.isCorrect).length : 0;
+
+    return (
+        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className={`w-full max-w-2xl max-h-[80vh] flex flex-col rounded-2xl shadow-lg overflow-hidden ${theme === 'professional' ? 'bg-gray-100' : 'bg-gray-900'}`}>
+                <div className={`p-4 border-b ${theme === 'professional' ? 'border-gray-200' : 'border-white/10'}`}>
+                    <h3 className="font-bold text-lg">{results ? 'Quiz Results' : quiz.topic}</h3>
+                    <p className="text-sm text-gray-500">{quiz.mcqs.length} Questions &bull; {quiz.difficulty}</p>
+                </div>
+                <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                    {results ? (
+                         <>
+                            <p className="text-center text-xl mb-4 font-semibold">You scored {score} out of {results.length}!</p>
+                            {results.map((result, index) => (
+                                <div key={index} className={`p-3 rounded-lg ${result.isCorrect ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
+                                    <p className="font-semibold mb-2">{index + 1}. <MarkdownRenderer text={result.question}/></p>
+                                    {!result.isCorrect && (
+                                         <p className="text-sm">
+                                            <span className="font-bold">Correct answer: </span>
+                                            <span><MarkdownRenderer text={result.correctAnswer} /></span>
+                                         </p>
+                                    )}
+                                </div>
+                            ))}
+                        </>
+                    ) : (
+                        quiz.mcqs.map((mcq, index) => (
+                             <div key={index}>
+                                <p className="font-semibold mb-2">{index + 1}. <MarkdownRenderer text={mcq.question} /></p>
+                                <div className="space-y-1">
+                                    {mcq.options.map((option, i) => (
+                                        <label key={i} className={`flex items-center p-2 rounded-lg cursor-pointer ${theme === 'professional' ? 'hover:bg-gray-200' : 'hover:bg-black/20'}`}>
+                                            <input type="radio" name={`q-${index}`} value={option} onChange={() => handleAnswerSelect(mcq.question, option)} className="mr-2" />
+                                            <MarkdownRenderer text={option}/>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+                <div className={`p-4 border-t flex justify-end gap-4 ${theme === 'professional' ? 'border-gray-200' : 'border-white/10'}`}>
+                    <button onClick={onClose} className={`px-4 py-2 rounded-lg ${theme === 'professional' ? 'bg-gray-200' : 'bg-white/10'}`}>Close</button>
+                    {!results && <button onClick={handleSubmit} className={`px-4 py-2 rounded-lg text-white ${theme === 'professional' ? 'bg-orange-500' : 'bg-purple-600'}`}>Submit</button>}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const GroupFlashcardViewer: React.FC<{ flashcards: FlashcardPayload; onClose: () => void; theme: Theme }> = ({ flashcards, onClose, theme }) => {
+    const [currentIndex, setCurrentIndex] = useState(0);
+    const [isFlipped, setIsFlipped] = useState(false);
+
+    const handleNext = () => {
+        setIsFlipped(false);
+        setCurrentIndex(prev => (prev + 1) % flashcards.flashcards.length);
+    };
+
+    const handlePrev = () => {
+        setIsFlipped(false);
+        setCurrentIndex(prev => (prev - 1 + flashcards.flashcards.length) % flashcards.flashcards.length);
+    };
+
+    const card = flashcards.flashcards[currentIndex];
+
+    return (
+        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-50 flex flex-col items-center justify-center p-4">
+             <div className="w-full max-w-lg">
+                <h3 className="font-bold text-lg text-white text-center mb-2">{flashcards.topic}</h3>
+                <div className="[perspective:1000px] h-64 w-full" onClick={() => setIsFlipped(!isFlipped)}>
+                    <div className={`relative w-full h-full [transform-style:preserve-3d] transition-transform duration-500 ${isFlipped ? '[transform:rotateY(180deg)]' : ''}`}>
+                        <div className={`absolute w-full h-full [backface-visibility:hidden] flex items-center justify-center p-4 text-center rounded-xl shadow-lg border ${theme === 'professional' ? 'bg-white border-gray-200' : 'bg-gray-800 border-white/20'}`}>
+                            <p className="font-bold text-xl">{card.term}</p>
+                        </div>
+                        <div className={`absolute w-full h-full [backface-visibility:hidden] [transform:rotateY(180deg)] flex items-center justify-center p-4 text-center rounded-xl shadow-lg border ${theme === 'professional' ? 'bg-sky-100 border-sky-300' : 'bg-indigo-900/50 border-white/20'}`}>
+                            <p>{card.definition}</p>
+                        </div>
+                    </div>
+                </div>
+                <div className="flex justify-between items-center mt-4 text-white">
+                    <button onClick={handlePrev} className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20">Prev</button>
+                    <span>{currentIndex + 1} / {flashcards.flashcards.length}</span>
+                    <button onClick={handleNext} className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20">Next</button>
+                </div>
+             </div>
+             <button onClick={onClose} className="mt-6 px-4 py-2 rounded-lg bg-red-500/50 hover:bg-red-500/80 text-white">Close</button>
         </div>
     );
 };

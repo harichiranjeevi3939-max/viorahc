@@ -61,13 +61,27 @@ export interface AppSettings {
 }
 
 // Viora Group Chat Types
+export interface QuizPayload {
+  topic: string;
+  mcqs: MCQ[];
+  difficulty: 'Basic' | 'Standard' | 'Hard';
+}
+
+export interface FlashcardPayload {
+  topic: string;
+  flashcards: Flashcard[];
+}
+
 export interface GroupChatMessage {
   id: string;
   userId: string;
   userName: string;
-  text: string;
   timestamp: number;
   isViora?: boolean;
+  // New structure
+  type: 'text' | 'system' | 'quiz' | 'flashcards';
+  text?: string; // For text and system messages
+  payload?: QuizPayload | FlashcardPayload; // For quiz and flashcard messages
 }
 
 export interface GroupChatMember {

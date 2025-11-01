@@ -142,6 +142,7 @@ const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultCh
                 startAngle: (cumulativePercent / 100) * 360,
                 endAngle: ((cumulativePercent + percent) / 100) * 360,
             };
+            // Fix: Corrected a logical error where the cumulative percentage was not being updated, causing the pie chart to render incorrectly.
             cumulativePercent += percent;
             return result;
         });

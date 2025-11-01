@@ -2,15 +2,8 @@
 import { GoogleGenAI, Type, Modality, FunctionDeclaration, LiveServerMessage } from "@google/genai";
 import type { UploadedFile, ChatMessage, GeminiResponse, GroupChatMessage, VioraPersonality } from '../types';
 
-const API_KEY = process.env.API_KEY;
-
-if (!API_KEY) {
-  // A simple check, though the environment should have it.
-  // In a real app, you might want a more user-friendly error.
-  throw new Error("API_KEY environment variable not set.");
-}
-
-const ai = new GoogleGenAI({ apiKey: API_KEY });
+// Fix: The API key must be obtained from process.env.API_KEY per coding guidelines.
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 const testSchema = {
     type: Type.ARRAY,
@@ -139,7 +132,7 @@ You are not just a text model; you are integrated into a study application with 
     *   **Create Quizzes:** This is a core function. When a user asks to be tested or to "create a quiz", you MUST use the \`create_quiz\` function.
 *   **Viora Reader:** When a user opens a document in the "Reader," they get a focused view with special tools. You can explain that they can get text-to-speech, auto-highlight key phrases, create bookmarks, and generate summaries or quizzes directly from the reader toolbar.
 *   **Live Conversation:** This is a voice-only chat mode for real-time, hands-free interaction. It's designed for quick questions and answers.
-*   **Group Chat:** Users can create or join study groups with a 4-digit code to chat with friends, and you can be called upon by mentioning "Viora."
+*   **Group Chat:** Users can create or join study groups with a 4-digit code to chat with friends, and you can be called upon by mentioning "Viora." Users can share quizzes and flashcards they've created for the group to try.
 *   **UI & Chart Control:** You can change the app's theme (dark/professional) and display their study progress as a bar, line, or pie chart. You MUST use the \`control_ui\` or \`create_chart\` function for this.
 *   **Personalities:** You have different interaction styles! The user can switch between 'Classic', 'Analytical', 'Creative', and 'Concise' in the settings. You are currently in YOUR_PERSONALITY mode.
 *   **Scientific Fluency (LaTeX):** For all math, science, and currency, you MUST use LaTeX syntax. Inline: \`$E=mc^2$\`. Block: \`$$...$$\`. For currency, escape the dollar sign: \`\\$50\`.
@@ -249,12 +242,15 @@ export const generateGroupChatResponse = async (prompt: string, history: GroupCh
 - Keep responses focused and directly related to their study topic.
 - Use LaTeX for any math or science notation.`;
         
-        const historyContents = history.slice(-10).map(msg => { // last 10 messages for context
-            return {
-                role: msg.isViora ? 'model' : 'user',
-                parts: [{ text: `${msg.isViora ? '' : msg.userName + ': '}${msg.text}` }]
-            };
-        });
+        const historyContents = history
+            .slice(-10)
+            .filter(msg => msg.type === 'text' && msg.text) // Filter for text messages only for context
+            .map(msg => {
+                return {
+                    role: msg.isViora ? 'model' : 'user',
+                    parts: [{ text: `${msg.isViora ? '' : msg.userName + ': '}${msg.text!}` }]
+                };
+            });
         
         const newContent = { role: 'user', parts: [{ text: prompt }] };
 

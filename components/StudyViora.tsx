@@ -2,12 +2,13 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { generateChatResponse, generateTest, generateExplanation, generateFlashcards, generateSummary, generateSuggestions, generateSpeech, extractTextFromFile, generateTopicForContent } from '../services/geminiService';
 import VioraReader from './VioraReader';
 import LiveConversation from './LiveConversation';
-import type { ChatMessage, MCQ, Flashcard, UploadedFile, UserAnswer, QuizAttempt, AppSettings, VioraPersonality } from '../types';
+import type { ChatMessage, MCQ, Flashcard, UploadedFile, UserAnswer, QuizAttempt, AppSettings, VioraPersonality, GroupChatMessage, QuizPayload, FlashcardPayload } from '../types';
 import { fileToBase64 } from '../utils/fileUtils';
 import { decode, decodeAudioData } from '../utils/audioUtils';
-import { saveQuizAttempt, getStudyProgress, getChatHistory, saveChatHistory } from '../utils/localStorageUtils';
+import { saveQuizAttempt, getStudyProgress, getChatHistory, saveChatHistory, getActiveGroupId, getOrSetUserId } from '../utils/localStorageUtils';
+import { getGroupSession, saveGroupSession } from './VioraGroupChat'; // Import from VioraGroupChat
 import { MarkdownRenderer } from '../utils/markdownUtils';
-import { SendIcon, UploadIcon, CloseIcon, HumanBrainIcon, BrainCircuitIcon, CheckCircleIcon, XCircleIcon, FileTextIcon, UserIcon, SummarizeIcon, Volume2Icon, StopCircleIcon, MicrophoneIcon, LightbulbIcon, ConciseIcon } from './icons';
+import { SendIcon, UploadIcon, CloseIcon, HumanBrainIcon, BrainCircuitIcon, CheckCircleIcon, XCircleIcon, FileTextIcon, UserIcon, SummarizeIcon, Volume2Icon, StopCircleIcon, MicrophoneIcon, LightbulbIcon, ConciseIcon, ShareIcon } from './icons';
 import type { Theme } from '../App';
 
 declare const mammoth: any;
@@ -74,6 +75,11 @@ const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, on
     
     // Live Conversation State
     const [isLiveConversationActive, setIsLiveConversationActive] = useState(false);
+    
+    // Group Chat State
+    const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
+    const [shareConfirmation, setShareConfirmation] = useState('');
+
 
     useEffect(() => {
         const savedHistory = getChatHistory();
@@ -93,12 +99,20 @@ const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, on
         if (progress.length > 0) {
             setLastQuizAttempt(progress[0]);
         }
+        
+        // Check for active group on mount and listen for changes
+        setActiveGroupId(getActiveGroupId());
+        const handleStorageChange = () => {
+            setActiveGroupId(getActiveGroupId());
+        };
+        window.addEventListener('storage', handleStorageChange);
 
         // Cleanup any pending timeouts on unmount
         return () => {
             if (returnToReaderTimeout.current) {
                 clearTimeout(returnToReaderTimeout.current);
             }
+            window.removeEventListener('storage', handleStorageChange);
         };
     }, []);
 
@@ -122,6 +136,13 @@ const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, on
             audioContextRef.current?.close();
         };
     }, []);
+    
+    useEffect(() => {
+        if (shareConfirmation) {
+            const timer = setTimeout(() => setShareConfirmation(''), 3000);
+            return () => clearTimeout(timer);
+        }
+    }, [shareConfirmation]);
 
     const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const files = event.target.files;
@@ -177,7 +198,7 @@ const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, on
 
                 unsupportedFiles.push(file.name);
                 return null;
-// Fix: Replaced unsafe type assertion with a type guard to safely handle unknown error types.
+            // Fix: Replaced unsafe property access on 'unknown' error type with a type guard.
             } catch (e) {
                 const message = e instanceof Error ? e.message : String(e);
                 console.error(`Error processing file ${file.name}:`, message);
@@ -233,8 +254,8 @@ const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, on
             setUserAnswers(new Map());
             setTestResults([]);
             setMode('test');
+        // Fix: Replaced unsafe property access on 'unknown' error type with a type guard.
         } catch (error) {
-            // Fix: Replaced unsafe type assertion with a type guard to safely handle unknown error types.
             const message = error instanceof Error ? error.message : String(error);
             setMode('chat');
             setMessages(prev => [...prev, { id: self.crypto.randomUUID(), role: 'system', text: `Error generating test: ${message}` }]);
@@ -392,8 +413,8 @@ const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, on
             setFlashcards(generatedFlashcards);
             setFlippedCard(null);
             setMode('flashcards');
+        // Fix: Replaced unsafe property access on 'unknown' error type with a type guard.
         } catch (error) {
-            // Fix: The user reported multiple errors related to unsafe error handling. This catch block used an unsafe type assertion. It has been updated to safely handle errors of unknown type.
             const message = error instanceof Error ? error.message : String(error);
             setMode('chat');
             setMessages(prev => [...prev, { id: self.crypto.randomUUID(), role: 'system', text: `Error generating flashcards: ${message}` }]);
@@ -490,6 +511,65 @@ const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, on
 
     const handleShuffleFlashcards = () => {
         setFlashcards(prev => [...prev].sort(() => Math.random() - 0.5));
+    };
+    
+    const handleShareQuiz = () => {
+        const userId = getOrSetUserId();
+        const userName = localStorage.getItem('viora-username');
+        if (!activeGroupId || !lastQuizAttempt || !userId || !userName) return;
+        
+        const session = getGroupSession(activeGroupId);
+        if (!session) return;
+        
+        const payload: QuizPayload = {
+            topic: lastQuizAttempt.topic || 'Shared Quiz',
+            mcqs: mcqs,
+            difficulty: lastQuizAttempt.difficulty,
+        };
+        
+        const shareMessage: GroupChatMessage = {
+            id: self.crypto.randomUUID(),
+            userId: userId,
+            userName: userName,
+            timestamp: Date.now(),
+            type: 'quiz',
+            payload: payload,
+        };
+        
+        session.messages.push(shareMessage);
+        saveGroupSession(session);
+        setShareConfirmation('Quiz shared to group!');
+    };
+
+    const handleShareFlashcards = async () => {
+        const userId = getOrSetUserId();
+        const userName = localStorage.getItem('viora-username');
+        if (!activeGroupId || flashcards.length === 0 || !userId || !userName) return;
+
+        const session = getGroupSession(activeGroupId);
+        if (!session) return;
+        
+        // Find the topic for the flashcards based on the last quiz attempt or system message content
+        const contentSource = lastQuizAttempt?.sourceContent || messages.find(m => m.attachments && m.attachments.length > 0)?.attachments?.[0].content || '';
+        const topic = await generateTopicForContent(contentSource);
+
+        const payload: FlashcardPayload = {
+            topic: topic || "Shared Flashcards",
+            flashcards: flashcards,
+        };
+
+        const shareMessage: GroupChatMessage = {
+            id: self.crypto.randomUUID(),
+            userId,
+            userName,
+            timestamp: Date.now(),
+            type: 'flashcards',
+            payload,
+        };
+
+        session.messages.push(shareMessage);
+        saveGroupSession(session);
+        setShareConfirmation('Flashcards shared to group!');
     };
     
     const PersonalityIndicator: React.FC = () => {
@@ -763,6 +843,11 @@ const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, on
                            Retry Quiz
                         </button>
                     )}
+                    {activeGroupId && (
+                        <button onClick={handleShareQuiz} className={`flex items-center gap-2 px-6 py-2 text-white rounded-lg transition-opacity hover:opacity-90 ${theme === 'professional' ? 'bg-sky-500' : 'bg-pink-500'}`}>
+                           <ShareIcon className="w-5 h-5" /> Share to Group
+                        </button>
+                    )}
                 </div>
             </div>
         )
@@ -788,6 +873,11 @@ const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, on
             <div className="flex justify-center mt-8 space-x-4">
                 <button onClick={handleShuffleFlashcards} className={`px-6 py-2 rounded-lg border transition-colors ${theme === 'professional' ? 'bg-white hover:bg-gray-100 border-gray-300' : 'bg-white/20 dark:bg-black/20 hover:bg-white/30 dark:hover:bg-black/30 border-black/10 dark:border-white/20'}`}>Shuffle</button>
                 <button onClick={() => setMode('chat')} className={`px-6 py-2 text-white rounded-lg ${theme === 'professional' ? 'bg-sky-500 hover:bg-sky-600' : 'bg-indigo-600 hover:bg-indigo-700'}`}>Exit to Home</button>
+                 {activeGroupId && (
+                    <button onClick={handleShareFlashcards} className={`flex items-center gap-2 px-6 py-2 text-white rounded-lg transition-opacity hover:opacity-90 ${theme === 'professional' ? 'bg-orange-500' : 'bg-purple-500'}`}>
+                       <ShareIcon className="w-5 h-5" /> Share to Group
+                    </button>
+                )}
             </div>
         </div>
     );
@@ -827,6 +917,12 @@ const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, on
                     onClose={() => setIsLiveConversationActive(false)}
                     theme={theme}
                 />
+            )}
+            {/* Share Confirmation Toast */}
+            {shareConfirmation && (
+                <div className="absolute bottom-24 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg animate-slide-in z-50">
+                    {shareConfirmation}
+                </div>
             )}
         </div>
     );

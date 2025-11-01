@@ -3,6 +3,8 @@ import type { QuizAttempt, ChatMessage, AppSettings } from '../types';
 const PROGRESS_KEY = 'tundra-viora-progress';
 const CHAT_HISTORY_KEY = 'tundra-viora-chat-history';
 const SETTINGS_KEY = 'tundra-viora-settings';
+const ACTIVE_GROUP_ID_KEY = 'viora-active-group-id';
+const USER_ID_KEY = 'viora-user-id';
 
 // --- App Settings ---
 const defaultSettings: AppSettings = {
@@ -78,4 +80,26 @@ export const saveChatHistory = (history: ChatMessage[]): void => {
     } catch (error) {
         console.error("Error saving chat history to local storage:", error);
     }
+};
+
+// --- Active Group & User ID ---
+export const getActiveGroupId = (): string | null => {
+    return localStorage.getItem(ACTIVE_GROUP_ID_KEY);
+};
+
+export const setActiveGroupId = (groupId: string): void => {
+    localStorage.setItem(ACTIVE_GROUP_ID_KEY, groupId);
+};
+
+export const clearActiveGroupId = (): void => {
+    localStorage.removeItem(ACTIVE_GROUP_ID_KEY);
+};
+
+export const getOrSetUserId = (): string => {
+    let id = localStorage.getItem(USER_ID_KEY);
+    if (!id) {
+        id = self.crypto.randomUUID();
+        localStorage.setItem(USER_ID_KEY, id);
+    }
+    return id;
 };
