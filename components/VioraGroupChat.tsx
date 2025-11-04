@@ -1,79 +1,14 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { generateGroupChatResponse } from '../services/geminiService';
-import { HumanBrainIcon, SendIcon, CloseIcon, UsersIcon, UserIcon, ClipboardListIcon, LayersIcon, CheckCircleIcon, XCircleIcon } from './icons';
+import { generateGroupChatResponse, generateProactiveGroupChatResponse } from '../services/geminiService';
+import * as groupChatService from '../services/groupChatService';
+import { HumanBrainIcon, SendIcon, CloseIcon, UsersIcon, UploadIcon, ClipboardListIcon, LayersIcon } from './icons';
 import { MarkdownRenderer } from '../utils/markdownUtils';
-import type { Theme } from '../App';
-import type { GroupChatSession, GroupChatMessage, GroupChatMember, QuizPayload, FlashcardPayload, MCQ, Flashcard, UserAnswer } from '../types';
+import { imageFileToDataUrl } from '../utils/fileUtils';
+import type { Theme, GroupChatSession, GroupChatMessage, QuizPayload, FlashcardPayload, ImagePayload } from '../types';
 import { getOrSetUserId, setActiveGroupId, clearActiveGroupId } from '../utils/localStorageUtils';
+import GroupQuizRunner from './groupchat/GroupQuizRunner';
+import GroupFlashcardViewer from './groupchat/GroupFlashcardViewer';
 
-
-// --- LocalStorage "Backend" Simulation ---
-const GROUP_CHAT_KEY_PREFIX = 'viora-group-chat-';
-const SAVED_GROUPS_KEY = 'viora-saved-groups';
-
-const generateGroupId = (): string => {
-    // Generate a random 4-digit number between 1000 and 9999
-    return String(Math.floor(1000 + Math.random() * 9000));
-};
-
-export const getGroupSession = (groupId: string): GroupChatSession | null => {
-    try {
-        const data = localStorage.getItem(`${GROUP_CHAT_KEY_PREFIX}${groupId}`);
-        return data ? JSON.parse(data) : null;
-    } catch {
-        return null;
-    }
-};
-
-export const saveGroupSession = (session: GroupChatSession) => {
-    try {
-        localStorage.setItem(`${GROUP_CHAT_KEY_PREFIX}${session.id}`, JSON.stringify(session));
-        // Dispatch a storage event to notify other tabs/windows
-        window.dispatchEvent(new StorageEvent('storage', {
-            key: `${GROUP_CHAT_KEY_PREFIX}${session.id}`,
-            newValue: JSON.stringify(session),
-        }));
-    } catch (e) {
-        console.error("Failed to save group session", e);
-    }
-};
-
-const getSavedGroups = (): string[] => {
-    try {
-        const data = localStorage.getItem(SAVED_GROUPS_KEY);
-        return data ? JSON.parse(data) : [];
-    } catch {
-        return [];
-    }
-};
-
-const addSavedGroup = (groupId: string) => {
-    try {
-        let saved = getSavedGroups();
-        // Remove if it exists to move it to the front
-        saved = saved.filter(id => id !== groupId);
-        // Add to the front (most recent)
-        saved.unshift(groupId);
-        // Keep a max of 5 saved groups
-        saved = saved.slice(0, 5);
-        localStorage.setItem(SAVED_GROUPS_KEY, JSON.stringify(saved));
-    } catch (e) {
-        console.error("Failed to add saved group", e);
-    }
-};
-
-const removeSavedGroup = (groupId: string) => {
-     try {
-        let saved = getSavedGroups();
-        saved = saved.filter(id => id !== groupId);
-        localStorage.setItem(SAVED_GROUPS_KEY, JSON.stringify(saved));
-    } catch (e) {
-        console.error("Failed to remove saved group", e);
-    }
-}
-
-
-// --- Component ---
 interface VioraGroupChatProps {
     onClose: () => void;
     theme: Theme;
@@ -90,6 +25,7 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
     const [messageInput, setMessageInput] = useState('');
     const [savedGroups, setSavedGroups] = useState<GroupChatSession[]>([]);
     const chatEndRef = useRef<HTMLDivElement>(null);
+    const imageInputRef = useRef<HTMLInputElement>(null);
     
     // For draggable window
     const containerRef = useRef<HTMLDivElement>(null);
@@ -102,8 +38,8 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
     const [activeFlashcards, setActiveFlashcards] = useState<FlashcardPayload | null>(null);
 
     const loadSavedGroups = useCallback(() => {
-        const groupIds = getSavedGroups();
-        const groups = groupIds.map(getGroupSession).filter(Boolean) as GroupChatSession[];
+        const groupIds = groupChatService.getSavedGroups();
+        const groups = groupIds.map(groupChatService.getGroupSession).filter(Boolean) as GroupChatSession[];
         setSavedGroups(groups);
     }, []);
 
@@ -123,8 +59,8 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
     // This effect manages the storage event listener and component cleanup logic.
     useEffect(() => {
         const handleStorage = (e: StorageEvent) => {
-            if (session && e.key === `${GROUP_CHAT_KEY_PREFIX}${session.id}`) {
-                const updatedSession = getGroupSession(session.id);
+            if (session && e.key === `viora-group-chat-${session.id}`) {
+                const updatedSession = groupChatService.getGroupSession(session.id);
                 if (updatedSession) {
                     setSession(updatedSession);
                 } else {
@@ -132,7 +68,7 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
                     setTimeout(resetToLanding, 2000);
                 }
             }
-            if (e.key === SAVED_GROUPS_KEY) {
+            if (e.key === 'viora-saved-groups') {
                 loadSavedGroups();
             }
         };
@@ -148,15 +84,14 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
             clearActiveGroupId();
 
             if (session && userId) {
-                const sessionOnDisk = getGroupSession(session.id);
+                const sessionOnDisk = groupChatService.getGroupSession(session.id);
                 if (sessionOnDisk) {
                      if (sessionOnDisk.hostId === userId) {
-                        localStorage.removeItem(`${GROUP_CHAT_KEY_PREFIX}${session.id}`);
-                        removeSavedGroup(session.id);
-                        window.dispatchEvent(new StorageEvent('storage', { key: `${GROUP_CHAT_KEY_PREFIX}${session.id}`, newValue: null }));
+                        groupChatService.deleteGroupSession(session.id);
+                        groupChatService.removeSavedGroup(session.id);
                      } else {
                         sessionOnDisk.members = sessionOnDisk.members.filter(m => m.userId !== userId);
-                        saveGroupSession(sessionOnDisk);
+                        groupChatService.saveGroupSession(sessionOnDisk);
                      }
                 }
             }
@@ -178,24 +113,29 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
             return;
         }
         setError('');
-        const newGroupId = generateGroupId();
+        let newGroupId = groupChatService.generateGroupId();
+        while(groupChatService.getGroupSession(newGroupId)) {
+            newGroupId = groupChatService.generateGroupId();
+        }
+
         const newSession: GroupChatSession = {
             id: newGroupId,
             hostId: userId,
             members: [{ userId, userName }],
             messages: [{
                 id: self.crypto.randomUUID(),
-                userId: 'system',
-                userName: 'System',
-                text: `${userName} created the group. Call me Viora when you need help!`,
+                userId: 'viora-ai',
+                userName: 'Viora',
+                isViora: true,
+                text: `Welcome to the study group! The code to join is **${newGroupId}**. Share it with your friends! Feel free to ask me anything by mentioning "Viora".`,
                 timestamp: Date.now(),
-                type: 'system',
+                type: 'text',
             }],
             groupIcon: newGroupId,
         };
         setSession(newSession);
-        saveGroupSession(newSession);
-        addSavedGroup(newGroupId);
+        groupChatService.saveGroupSession(newSession);
+        groupChatService.addSavedGroup(newGroupId);
         setView('chat');
     };
 
@@ -210,7 +150,7 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
             return;
         }
         setError('');
-        const existingSession = getGroupSession(code);
+        const existingSession = groupChatService.getGroupSession(code);
         if (!existingSession) {
             setError("Group not found. Please check the code.");
             return;
@@ -234,22 +174,19 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
         }
         
         setSession(existingSession);
-        saveGroupSession(existingSession);
-        addSavedGroup(code);
+        groupChatService.saveGroupSession(existingSession);
+        groupChatService.addSavedGroup(code);
         setView('chat');
     };
 
     const handleLeaveGroup = (isQuiet = false) => {
         if (session) {
-            const currentSession = getGroupSession(session.id);
+            const currentSession = groupChatService.getGroupSession(session.id);
             if (currentSession) {
                  if (currentSession.hostId === userId) {
-                    // Host is leaving, end session for everyone
-                    localStorage.removeItem(`${GROUP_CHAT_KEY_PREFIX}${session.id}`);
-                    removeSavedGroup(session.id);
-                     window.dispatchEvent(new StorageEvent('storage', { key: `${GROUP_CHAT_KEY_PREFIX}${session.id}`, newValue: null }));
+                    groupChatService.deleteGroupSession(session.id);
+                    groupChatService.removeSavedGroup(session.id);
                  } else {
-                    // Member is leaving
                     currentSession.members = currentSession.members.filter(m => m.userId !== userId);
                     if(!isQuiet) {
                          currentSession.messages.push({
@@ -261,7 +198,7 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
                             type: 'system',
                         });
                     }
-                    saveGroupSession(currentSession);
+                    groupChatService.saveGroupSession(currentSession);
                  }
             }
         }
@@ -269,26 +206,25 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
         onClose();
     };
 
-    const handleSendMessage = async () => {
-        if (!messageInput.trim() || !session) return;
+    const handleSendMessage = async (messagePayload: { text?: string; type: GroupChatMessage['type']; payload?: GroupChatMessage['payload'] }) => {
+        if (!session) return;
 
         const newMessage: GroupChatMessage = {
             id: self.crypto.randomUUID(),
             userId,
             userName,
-            text: messageInput.trim(),
             timestamp: Date.now(),
-            type: 'text',
+            ...messagePayload
         };
 
         const updatedSession = { ...session, messages: [...session.messages, newMessage] };
         setSession(updatedSession);
-        saveGroupSession(updatedSession);
+        groupChatService.saveGroupSession(updatedSession);
         
         const messageText = messageInput;
         setMessageInput('');
 
-        if (messageText.toLowerCase().includes('viora')) {
+        if (messagePayload.type === 'text' && messagePayload.text?.toLowerCase().includes('viora')) {
             setIsVioraTyping(true);
             const vioraResponseText = await generateGroupChatResponse(messageText, updatedSession.messages);
             const vioraMessage: GroupChatMessage = {
@@ -301,14 +237,50 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
                 type: 'text',
             };
             
-            // Refetch session to not overwrite messages sent while Viora was thinking
-            const latestSession = getGroupSession(session.id);
+            const latestSession = groupChatService.getGroupSession(session.id);
             if (latestSession) {
                 latestSession.messages.push(vioraMessage);
                 setSession(latestSession);
-                saveGroupSession(latestSession);
+                groupChatService.saveGroupSession(latestSession);
             }
             setIsVioraTyping(false);
+        } else if (messagePayload.type === 'text') {
+            const userMessages = updatedSession.messages.filter(m => !m.isViora && m.type === 'text');
+            if (userMessages.length > 2 && Math.random() < 0.25) {
+                const proactiveResponse = await generateProactiveGroupChatResponse(updatedSession.messages, updatedSession.members);
+                if (proactiveResponse !== "NULL") {
+                    const vioraProactiveMessage: GroupChatMessage = {
+                        id: self.crypto.randomUUID(),
+                        userId: 'viora-ai',
+                        userName: 'Viora',
+                        text: proactiveResponse,
+                        timestamp: Date.now(),
+                        isViora: true,
+                        type: 'text',
+                    };
+                    const latestSession = groupChatService.getGroupSession(session.id);
+                    if (latestSession) {
+                        latestSession.messages.push(vioraProactiveMessage);
+                        setSession(latestSession);
+                        groupChatService.saveGroupSession(latestSession);
+                    }
+                }
+            }
+        }
+    };
+
+    const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        try {
+            const { src, fileName } = await imageFileToDataUrl(file);
+            const payload: ImagePayload = { src, fileName };
+            handleSendMessage({ type: 'image', payload });
+        } catch(e) {
+            alert(e instanceof Error ? e.message : 'Failed to upload image.');
+        } finally {
+            if (event.target) event.target.value = '';
         }
     };
     
@@ -353,8 +325,8 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
     // --- Render Functions ---
 
     const renderLanding = () => (
-        <div className="p-6 text-center h-full flex flex-col">
-            <UsersIcon className="w-16 h-16 mx-auto mb-4 text-purple-400"/>
+        <div className="p-6 text-center h-full flex flex-col bg-transparent">
+            <UsersIcon className={`w-16 h-16 mx-auto mb-4 ${theme === 'professional' ? 'text-orange-500' : 'text-violet-400'}`}/>
             <h2 className="text-2xl font-bold mb-2">Viora Group Chat</h2>
             <p className={`mb-6 ${theme === 'professional' ? 'text-gray-600' : 'text-gray-400'}`}>Study together with your friends and Viora.</p>
             
@@ -364,11 +336,11 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
                     value={userName}
                     onChange={e => handleNameChange(e.target.value)}
                     placeholder="Enter your name..."
-                    className={`w-full p-3 rounded-lg border focus:ring-2 focus:outline-none transition-colors ${theme === 'professional' ? 'bg-white border-gray-300 focus:ring-orange-400' : 'bg-white/5 dark:bg-black/20 border-white/10 dark:border-black/20 focus:ring-purple-500'}`}
+                    className={`w-full p-3 rounded-lg border focus:ring-2 focus:outline-none transition-colors ${theme === 'professional' ? 'bg-white/30 backdrop-blur-sm border-gray-300/50 focus:ring-orange-400' : 'bg-black/10 backdrop-blur-sm border-white/5 focus:ring-violet-500'}`}
                 />
                 <button
                     onClick={handleCreateGroup}
-                    className={`w-full p-3 font-bold text-white rounded-lg transition-opacity hover:opacity-90 ${theme === 'professional' ? 'bg-gradient-to-br from-orange-500 to-sky-500' : 'bg-gradient-to-br from-purple-600 to-pink-600'}`}
+                    className={`w-full p-3 font-bold text-white rounded-lg transition-opacity hover:opacity-90 ${theme === 'professional' ? 'bg-gradient-to-br from-orange-500 to-sky-500' : 'bg-gradient-to-br from-violet-600 to-fuchsia-600'}`}
                 >
                     Create New Group
                 </button>
@@ -378,11 +350,11 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
                         value={joinCodeInput}
                         onChange={e => setJoinCodeInput(e.target.value)}
                         placeholder="Enter 4-digit code..."
-                        className={`flex-grow p-3 rounded-lg border focus:ring-2 focus:outline-none transition-colors ${theme === 'professional' ? 'bg-white border-gray-300 focus:ring-orange-400' : 'bg-white/5 dark:bg-black/20 border-white/10 dark:border-black/20 focus:ring-purple-500'}`}
+                        className={`flex-grow p-3 rounded-lg border focus:ring-2 focus:outline-none transition-colors ${theme === 'professional' ? 'bg-white/30 backdrop-blur-sm border-gray-300/50 focus:ring-orange-400' : 'bg-black/10 backdrop-blur-sm border-white/5 focus:ring-violet-500'}`}
                     />
                     <button
                         onClick={() => handleJoinGroup()}
-                        className={`px-4 font-bold text-white rounded-lg transition-opacity hover:opacity-90 ${theme === 'professional' ? 'bg-sky-500' : 'bg-pink-500'}`}
+                        className={`px-4 font-bold text-white rounded-lg transition-opacity hover:opacity-90 ${theme === 'professional' ? 'bg-sky-500' : 'bg-fuchsia-500'}`}
                     >
                         Join
                     </button>
@@ -399,7 +371,7 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
                             <div key={group.id} className="group relative">
                                 <button
                                     onClick={() => handleJoinGroup(group.id)}
-                                    className={`w-full text-left p-3 rounded-lg flex justify-between items-center transition-colors ${theme === 'professional' ? 'bg-gray-200/50 hover:bg-gray-200' : 'bg-white/5 dark:bg-black/20 hover:bg-white/10 dark:hover:bg-black/30'}`}
+                                    className={`w-full text-left p-3 rounded-lg flex justify-between items-center transition-colors ${theme === 'professional' ? 'bg-black/5 hover:bg-black/10' : 'bg-black/20 hover:bg-black/30'}`}
                                 >
                                     <div>
                                         <p className="font-bold">Group #{group.id}</p>
@@ -431,8 +403,8 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
     
     const GenerativeGroupIcon = ({ seed }: { seed: string }) => {
         const hash = seed.split('').reduce((acc, char) => char.charCodeAt(0) + ((acc << 5) - acc), 0);
-        const color1 = `hsl(${hash % 360}, 70%, 50%)`;
-        const color2 = `hsl(${(hash * 7) % 360}, 70%, 60%)`;
+        const color1 = theme === 'professional' ? `hsl(${hash % 360}, 80%, 60%)` : `hsl(${hash % 360}, 70%, 50%)`;
+        const color2 = theme === 'professional' ? `hsl(${(hash * 7) % 360}, 80%, 70%)` : `hsl(${(hash * 7) % 360}, 70%, 60%)`;
         return (
             <svg width="24" height="24" viewBox="0 0 24 24" className="rounded-full">
                 <defs>
@@ -449,10 +421,10 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
     };
 
     const renderChat = () => (
-        <div className="flex flex-col h-full">
+        <div className="flex flex-col h-full bg-transparent">
             {/* Header */}
             <div 
-                className={`flex-shrink-0 p-3 border-b flex justify-between items-center cursor-grab active:cursor-grabbing ${theme === 'professional' ? 'bg-white/50 border-gray-200' : 'bg-black/20 border-white/10'}`}
+                className={`flex-shrink-0 p-3 border-b flex justify-between items-center cursor-grab active:cursor-grabbing bg-transparent ${theme === 'professional' ? 'border-gray-200/50' : 'border-white/10'}`}
                 onMouseDown={onMouseDown}
             >
                 <div className="flex items-center gap-2">
@@ -465,7 +437,7 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
                 <div className="flex items-center gap-3">
                      <div className="flex -space-x-2 relative group">
                         {session!.members.map(m => (
-                            <div key={m.userId} className={`w-7 h-7 rounded-full bg-gray-400 flex items-center justify-center text-white text-xs font-bold ring-2 ${theme === 'professional' ? 'ring-gray-100' : 'ring-gray-800'}`} title={m.userName}>
+                            <div key={m.userId} className={`w-7 h-7 rounded-full bg-gray-400 flex items-center justify-center text-white text-xs font-bold ring-2 ${theme === 'professional' ? 'ring-gray-100/80' : 'ring-gray-800/80'}`} title={m.userName}>
                                 {m.userName.charAt(0).toUpperCase()}
                             </div>
                         ))}
@@ -483,6 +455,18 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
                     if (msg.type === 'system') {
                         return <p key={msg.id} className="text-center text-xs text-gray-500 italic py-2">{msg.text}</p>
                     }
+                    if (msg.type === 'image' && msg.payload) {
+                        const payload = msg.payload as ImagePayload;
+                        return (
+                             <div key={msg.id} className={`flex items-end gap-2 ${isSelf ? 'justify-end' : ''}`}>
+                                 {!isSelf && <div className="w-8 h-8 rounded-full bg-gray-300 dark:bg-gray-600 flex-shrink-0" title={msg.userName}></div>}
+                                 <div className={`max-w-xs p-2 rounded-2xl shadow-sm border ${ isSelf ? 'bg-blue-500 border-transparent' : (theme === 'professional' ? 'bg-white/80 border-gray-200' : 'bg-black/20 border-white/10')}`}>
+                                     {!isSelf && <p className={`text-xs font-bold mb-1 ${theme === 'professional' ? 'text-gray-600' : 'text-gray-400'}`}>{msg.userName}</p>}
+                                     <img src={payload.src} alt={payload.fileName} className="rounded-lg max-h-48" />
+                                 </div>
+                             </div>
+                        )
+                    }
                     if (msg.type === 'quiz' && msg.payload) {
                         const payload = msg.payload as QuizPayload;
                         return (
@@ -490,16 +474,16 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
                                 <div className="w-8 h-8 rounded-full bg-gray-300 dark:bg-gray-600 flex-shrink-0 flex items-center justify-center font-bold text-sm" title={msg.userName}>
                                     {msg.userName.charAt(0).toUpperCase()}
                                 </div>
-                                <div className={`max-w-xs md:max-w-md p-3 rounded-2xl shadow-sm ${theme === 'professional' ? 'bg-white border border-gray-200' : 'bg-white/10 dark:bg-black/20 backdrop-blur-md'}`}>
+                                <div className={`max-w-xs md:max-w-md p-3 rounded-2xl shadow-sm border ${theme === 'professional' ? 'bg-white/80 border-gray-200' : 'bg-black/20 backdrop-blur-md border-white/10'}`}>
                                     <p className={`text-xs font-bold mb-1 ${theme === 'professional' ? 'text-gray-600' : 'text-gray-400'}`}>{msg.userName} shared a quiz:</p>
                                     <div className="flex items-center gap-3">
-                                        <ClipboardListIcon className={`w-10 h-10 flex-shrink-0 ${theme === 'professional' ? 'text-orange-500' : 'text-purple-400'}`} />
+                                        <ClipboardListIcon className={`w-10 h-10 flex-shrink-0 ${theme === 'professional' ? 'text-orange-500' : 'text-violet-400'}`} />
                                         <div>
                                             <h4 className="font-semibold">{payload.topic}</h4>
                                             <p className="text-sm">{payload.mcqs.length} Questions &bull; {payload.difficulty}</p>
                                         </div>
                                     </div>
-                                    <button onClick={() => setActiveQuiz(payload)} className={`w-full mt-3 p-2 text-sm font-bold text-white rounded-lg transition-opacity hover:opacity-90 ${theme === 'professional' ? 'bg-orange-500' : 'bg-purple-500'}`}>
+                                    <button onClick={() => setActiveQuiz(payload)} className={`w-full mt-3 p-2 text-sm font-bold text-white rounded-lg transition-opacity hover:opacity-90 ${theme === 'professional' ? 'bg-orange-500' : 'bg-violet-500'}`}>
                                         Start Quiz
                                     </button>
                                 </div>
@@ -513,7 +497,7 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
                                 <div className="w-8 h-8 rounded-full bg-gray-300 dark:bg-gray-600 flex-shrink-0 flex items-center justify-center font-bold text-sm" title={msg.userName}>
                                     {msg.userName.charAt(0).toUpperCase()}
                                 </div>
-                                <div className={`max-w-xs md:max-w-md p-3 rounded-2xl shadow-sm ${theme === 'professional' ? 'bg-white border border-gray-200' : 'bg-white/10 dark:bg-black/20 backdrop-blur-md'}`}>
+                                <div className={`max-w-xs md:max-w-md p-3 rounded-2xl shadow-sm border ${theme === 'professional' ? 'bg-white/80 border-gray-200' : 'bg-black/20 backdrop-blur-md border-white/10'}`}>
                                     <p className={`text-xs font-bold mb-1 ${theme === 'professional' ? 'text-gray-600' : 'text-gray-400'}`}>{msg.userName} shared flashcards:</p>
                                     <div className="flex items-center gap-3">
                                         <LayersIcon className={`w-10 h-10 flex-shrink-0 ${theme === 'professional' ? 'text-sky-500' : 'text-indigo-400'}`} />
@@ -533,16 +517,16 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
                         return (
                             <div key={msg.id} className={`flex items-end gap-2 ${isSelf ? 'justify-end' : ''}`}>
                                  {!isSelf && (
-                                    <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center font-bold text-sm ${msg.isViora ? 'bg-purple-500/20' : 'bg-gray-300 dark:bg-gray-600'}`} title={msg.userName}>
+                                    <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center font-bold text-sm ${msg.isViora ? (theme === 'professional' ? 'bg-orange-500/10' : 'bg-violet-500/20') : 'bg-gray-300 dark:bg-gray-600'}`} title={msg.userName}>
                                         {msg.isViora ? <HumanBrainIcon theme={theme} className="w-5 h-5"/> : msg.userName.charAt(0).toUpperCase()}
                                     </div>
                                 )}
-                                <div className={`max-w-xs md:max-w-md p-3 rounded-2xl shadow-sm ${
-                                    isSelf ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-br-lg' : 
-                                    msg.isViora ? (theme === 'professional' ? 'bg-white border border-gray-200' : 'bg-purple-500/20 backdrop-blur-md') : 
-                                    (theme === 'professional' ? 'bg-white border border-gray-200' : 'bg-white/10 dark:bg-black/20 backdrop-blur-md')
+                                <div className={`max-w-xs md:max-w-md p-3 rounded-2xl shadow-sm border ${
+                                    isSelf ? 'bg-gradient-to-br from-blue-500 to-sky-500 text-white rounded-br-lg border-transparent' : 
+                                    msg.isViora ? (theme === 'professional' ? 'bg-white/80 border-gray-200' : 'bg-black/30 backdrop-blur-md border-white/15 shadow-[0_0_10px_rgba(192,132,252,0.15)]') : 
+                                    (theme === 'professional' ? 'bg-white/80 border-gray-200' : 'bg-black/20 backdrop-blur-md border-white/10')
                                 }`}>
-                                    {!isSelf && <p className={`text-xs font-bold mb-1 ${msg.isViora ? (theme === 'professional' ? 'text-orange-600' : 'text-purple-400') : (theme === 'professional' ? 'text-gray-600' : 'text-gray-400')}`}>{msg.userName}</p>}
+                                    {!isSelf && <p className={`text-xs font-bold mb-1 ${msg.isViora ? (theme === 'professional' ? 'text-orange-600' : 'text-violet-400') : (theme === 'professional' ? 'text-gray-600' : 'text-gray-400')}`}>{msg.userName}</p>}
                                     <MarkdownRenderer text={msg.text || ''} />
                                 </div>
                             </div>
@@ -552,14 +536,14 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
                 })}
                 {isVioraTyping && (
                     <div className="flex items-end gap-2">
-                        <div className="w-8 h-8 rounded-full bg-purple-500/20 flex-shrink-0 flex items-center justify-center font-bold text-sm">
+                        <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center font-bold text-sm ${theme === 'professional' ? 'bg-orange-500/10' : 'bg-violet-500/20'}`}>
                             <HumanBrainIcon theme={theme} className="w-5 h-5"/>
                         </div>
-                        <div className="p-3 rounded-2xl bg-purple-500/20">
+                        <div className={`p-3 rounded-2xl ${theme === 'professional' ? 'bg-orange-500/10' : 'bg-violet-500/20'}`}>
                             <div className="flex items-center gap-1.5">
-                                <span className="w-2 h-2 bg-purple-400 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
-                                <span className="w-2 h-2 bg-purple-400 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
-                                <span className="w-2 h-2 bg-purple-400 rounded-full animate-bounce"></span>
+                                <span className={`w-2 h-2 rounded-full animate-bounce [animation-delay:-0.3s] ${theme === 'professional' ? 'bg-orange-400' : 'bg-violet-400'}`}></span>
+                                <span className={`w-2 h-2 rounded-full animate-bounce [animation-delay:-0.15s] ${theme === 'professional' ? 'bg-orange-400' : 'bg-violet-400'}`}></span>
+                                <span className={`w-2 h-2 rounded-full animate-bounce ${theme === 'professional' ? 'bg-orange-400' : 'bg-violet-400'}`}></span>
                             </div>
                         </div>
                     </div>
@@ -567,17 +551,21 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
                 <div ref={chatEndRef}></div>
             </div>
             {/* Input */}
-            <div className={`flex-shrink-0 p-2 border-t ${theme === 'professional' ? 'bg-white/50 border-gray-200' : 'bg-black/20 border-white/10'}`}>
-                <div className={`flex items-center gap-2 p-1 rounded-full ${theme === 'professional' ? 'bg-gray-200/50' : 'bg-black/20'}`}>
+            <div className={`flex-shrink-0 p-2 border-t bg-transparent ${theme === 'professional' ? 'border-gray-200/50' : 'border-white/10'}`}>
+                <div className={`flex items-center gap-2 p-1 rounded-full ${theme === 'professional' ? 'bg-black/5' : 'bg-black/20'}`}>
+                    <button onClick={() => imageInputRef.current?.click()} className={`p-2 rounded-full transition-colors ${theme === 'professional' ? 'hover:bg-gray-200' : 'hover:bg-white/10'}`} title="Upload Image">
+                        <UploadIcon className="w-5 h-5" />
+                    </button>
+                    <input type="file" ref={imageInputRef} onChange={handleImageUpload} className="hidden" accept="image/*" />
                     <input
                         type="text"
                         value={messageInput}
                         onChange={e => setMessageInput(e.target.value)}
-                        onKeyDown={e => {if (e.key === 'Enter') handleSendMessage()}}
+                        onKeyDown={e => {if (e.key === 'Enter') handleSendMessage({ text: messageInput.trim(), type: 'text' })}}
                         placeholder="Type a message..."
                         className="w-full p-2 bg-transparent focus:outline-none"
                     />
-                    <button onClick={handleSendMessage} disabled={!messageInput.trim()} className="p-2 bg-blue-500 text-white rounded-full disabled:bg-gray-400 transition-colors"><SendIcon className="w-5 h-5"/></button>
+                    <button onClick={() => handleSendMessage({ text: messageInput.trim(), type: 'text' })} disabled={!messageInput.trim()} className="p-2 bg-blue-500 text-white rounded-full disabled:bg-gray-400 transition-colors"><SendIcon className="w-5 h-5"/></button>
                 </div>
             </div>
         </div>
@@ -585,7 +573,7 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
 
 
     return (
-        <div className="fixed inset-0 bg-black/30 backdrop-blur-lg z-40 flex items-center justify-center" onClick={() => handleLeaveGroup(false)}>
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40 flex items-center justify-center" onClick={() => handleLeaveGroup(false)}>
             <div
                 ref={containerRef}
                 onClick={e => e.stopPropagation()}
@@ -596,129 +584,15 @@ const VioraGroupChat: React.FC<VioraGroupChatProps> = ({ onClose, theme }) => {
                     shadow-2xl rounded-none md:rounded-[40px]
                     overflow-hidden border
                     animate-slide-in
-                    ${theme === 'professional' ? 'bg-gray-100/90 text-gray-900 border-gray-300' : 'bg-gray-900/80 text-gray-200 backdrop-blur-2xl border-white/20'}
+                    bg-transparent
+                    ${theme === 'professional' ? 'text-gray-900 border-white/50' : 'text-gray-200 border-white/20'}
                 `}
-                style={{ touchAction: 'none' }} // Prevent scrolling on mobile when dragging
+                style={{ touchAction: 'none' }}
             >
                 {view === 'landing' ? renderLanding() : renderChat()}
                 {activeQuiz && <GroupQuizRunner quiz={activeQuiz} onClose={() => setActiveQuiz(null)} theme={theme} />}
                 {activeFlashcards && <GroupFlashcardViewer flashcards={activeFlashcards} onClose={() => setActiveFlashcards(null)} theme={theme} />}
             </div>
-        </div>
-    );
-};
-
-
-// --- In-Chat Activity Modals ---
-
-const GroupQuizRunner: React.FC<{ quiz: QuizPayload; onClose: () => void; theme: Theme }> = ({ quiz, onClose, theme }) => {
-    const [userAnswers, setUserAnswers] = useState<Map<string, string>>(new Map());
-    const [results, setResults] = useState<UserAnswer[] | null>(null);
-
-    const handleAnswerSelect = (question: string, answer: string) => {
-        setUserAnswers(new Map(userAnswers.set(question, answer)));
-    };
-
-    const handleSubmit = () => {
-        const quizResults = quiz.mcqs.map(mcq => {
-            const selected = userAnswers.get(mcq.question) || "";
-            return {
-                question: mcq.question,
-                selectedAnswer: selected,
-                isCorrect: selected === mcq.correctAnswer,
-                correctAnswer: mcq.correctAnswer
-            };
-        });
-        setResults(quizResults);
-    };
-    
-    const score = results ? results.filter(r => r.isCorrect).length : 0;
-
-    return (
-        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className={`w-full max-w-2xl max-h-[80vh] flex flex-col rounded-2xl shadow-lg overflow-hidden ${theme === 'professional' ? 'bg-gray-100' : 'bg-gray-900'}`}>
-                <div className={`p-4 border-b ${theme === 'professional' ? 'border-gray-200' : 'border-white/10'}`}>
-                    <h3 className="font-bold text-lg">{results ? 'Quiz Results' : quiz.topic}</h3>
-                    <p className="text-sm text-gray-500">{quiz.mcqs.length} Questions &bull; {quiz.difficulty}</p>
-                </div>
-                <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                    {results ? (
-                         <>
-                            <p className="text-center text-xl mb-4 font-semibold">You scored {score} out of {results.length}!</p>
-                            {results.map((result, index) => (
-                                <div key={index} className={`p-3 rounded-lg ${result.isCorrect ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
-                                    <p className="font-semibold mb-2">{index + 1}. <MarkdownRenderer text={result.question}/></p>
-                                    {!result.isCorrect && (
-                                         <p className="text-sm">
-                                            <span className="font-bold">Correct answer: </span>
-                                            <span><MarkdownRenderer text={result.correctAnswer} /></span>
-                                         </p>
-                                    )}
-                                </div>
-                            ))}
-                        </>
-                    ) : (
-                        quiz.mcqs.map((mcq, index) => (
-                             <div key={index}>
-                                <p className="font-semibold mb-2">{index + 1}. <MarkdownRenderer text={mcq.question} /></p>
-                                <div className="space-y-1">
-                                    {mcq.options.map((option, i) => (
-                                        <label key={i} className={`flex items-center p-2 rounded-lg cursor-pointer ${theme === 'professional' ? 'hover:bg-gray-200' : 'hover:bg-black/20'}`}>
-                                            <input type="radio" name={`q-${index}`} value={option} onChange={() => handleAnswerSelect(mcq.question, option)} className="mr-2" />
-                                            <MarkdownRenderer text={option}/>
-                                        </label>
-                                    ))}
-                                </div>
-                            </div>
-                        ))
-                    )}
-                </div>
-                <div className={`p-4 border-t flex justify-end gap-4 ${theme === 'professional' ? 'border-gray-200' : 'border-white/10'}`}>
-                    <button onClick={onClose} className={`px-4 py-2 rounded-lg ${theme === 'professional' ? 'bg-gray-200' : 'bg-white/10'}`}>Close</button>
-                    {!results && <button onClick={handleSubmit} className={`px-4 py-2 rounded-lg text-white ${theme === 'professional' ? 'bg-orange-500' : 'bg-purple-600'}`}>Submit</button>}
-                </div>
-            </div>
-        </div>
-    );
-};
-
-const GroupFlashcardViewer: React.FC<{ flashcards: FlashcardPayload; onClose: () => void; theme: Theme }> = ({ flashcards, onClose, theme }) => {
-    const [currentIndex, setCurrentIndex] = useState(0);
-    const [isFlipped, setIsFlipped] = useState(false);
-
-    const handleNext = () => {
-        setIsFlipped(false);
-        setCurrentIndex(prev => (prev + 1) % flashcards.flashcards.length);
-    };
-
-    const handlePrev = () => {
-        setIsFlipped(false);
-        setCurrentIndex(prev => (prev - 1 + flashcards.flashcards.length) % flashcards.flashcards.length);
-    };
-
-    const card = flashcards.flashcards[currentIndex];
-
-    return (
-        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-50 flex flex-col items-center justify-center p-4">
-             <div className="w-full max-w-lg">
-                <h3 className="font-bold text-lg text-white text-center mb-2">{flashcards.topic}</h3>
-                <div className="[perspective:1000px] h-64 w-full" onClick={() => setIsFlipped(!isFlipped)}>
-                    <div className={`relative w-full h-full [transform-style:preserve-3d] transition-transform duration-500 ${isFlipped ? '[transform:rotateY(180deg)]' : ''}`}>
-                        <div className={`absolute w-full h-full [backface-visibility:hidden] flex items-center justify-center p-4 text-center rounded-xl shadow-lg border ${theme === 'professional' ? 'bg-white border-gray-200' : 'bg-gray-800 border-white/20'}`}>
-                            <p className="font-bold text-xl">{card.term}</p>
-                        </div>
-                        <div className={`absolute w-full h-full [backface-visibility:hidden] [transform:rotateY(180deg)] flex items-center justify-center p-4 text-center rounded-xl shadow-lg border ${theme === 'professional' ? 'bg-sky-100 border-sky-300' : 'bg-indigo-900/50 border-white/20'}`}>
-                            <p>{card.definition}</p>
-                        </div>
-                    </div>
-                </div>
-                <div className="flex justify-between items-center mt-4 text-white">
-                    <button onClick={handlePrev} className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20">Prev</button>
-                    <span>{currentIndex + 1} / {flashcards.flashcards.length}</span>
-                    <button onClick={handleNext} className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20">Next</button>
-                </div>
-             </div>
-             <button onClick={onClose} className="mt-6 px-4 py-2 rounded-lg bg-red-500/50 hover:bg-red-500/80 text-white">Close</button>
         </div>
     );
 };

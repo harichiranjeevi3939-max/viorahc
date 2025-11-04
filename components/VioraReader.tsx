@@ -3,8 +3,9 @@ import type { UploadedFile } from '../types';
 import { extractTextFromFile, generateSpeech, findKeyPhrases, findAndHighlightAnswers, generateSummary } from '../services/geminiService';
 import { decode, decodeAudioData } from '../utils/audioUtils';
 import { MarkdownRenderer } from '../utils/markdownUtils';
-import { PlayIcon, PauseIcon, HighlightIcon, DownloadIcon, CloseIcon, BrainCircuitIcon, ClipboardListIcon, LayersIcon, BookmarkIcon, SummarizeIcon } from './icons';
-import type { Theme } from '../App';
+import { PlayIcon, PauseIcon, HighlightIcon, DownloadIcon, CloseIcon, BrainCircuitIcon, ClipboardListIcon, LayersIcon, BookmarkIcon, SummarizeIcon, LightbulbIcon } from './icons';
+// Fix: Corrected the import path for the 'Theme' type.
+import type { Theme } from '../types';
 
 type Difficulty = 'Basic' | 'Standard' | 'Hard';
 interface VioraReaderProps {
@@ -12,6 +13,7 @@ interface VioraReaderProps {
     theme: Theme;
     onClose: () => void;
     onExplain: (text: string, currentScroll: number) => void;
+    onSimpleExplain: (text: string, currentScroll: number) => void;
     onGenerateTest: (content: string, difficulty: Difficulty) => void;
     onGenerateFlashcards: (content: string) => void;
     initialScrollPosition: number | null;
@@ -44,7 +46,7 @@ const ReaderSkeleton: React.FC = () => (
 );
 
 
-const VioraReader: React.FC<VioraReaderProps> = ({ file, theme, onClose, onExplain, onGenerateTest, onGenerateFlashcards, initialScrollPosition }) => {
+const VioraReader: React.FC<VioraReaderProps> = ({ file, theme, onClose, onExplain, onSimpleExplain, onGenerateTest, onGenerateFlashcards, initialScrollPosition }) => {
     const [text, setText] = useState<string>('');
     const [paragraphs, setParagraphs] = useState<string[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -79,6 +81,10 @@ const VioraReader: React.FC<VioraReaderProps> = ({ file, theme, onClose, onExpla
                 setText(extractedText);
                 setParagraphs(extractedText.split('\n\n').filter(p => p.trim() !== ''));
                 setSentences(extractedText.match(/[^.!?]+[.!?]*/g) || []);
+
+                // Auto-Emphasis on load
+                const keyPhrases = await findKeyPhrases(extractedText);
+                setHighlights(keyPhrases);
             } catch (e) {
                 setError('Failed to extract text from the document.');
             } finally {
@@ -102,6 +108,20 @@ const VioraReader: React.FC<VioraReaderProps> = ({ file, theme, onClose, onExpla
         };
     }, []);
 
+    // Effect for auto-scrolling during TTS
+    useEffect(() => {
+        if (!isReading || currentSentenceIndex < 0 || !contentRef.current) return;
+
+        const sentenceElements = contentRef.current.querySelectorAll('span[data-sentence-index]');
+        const currentElement = Array.from(sentenceElements).find(el => 
+            (el as HTMLElement).dataset.sentenceIndex === String(currentSentenceIndex)
+        ) as HTMLElement;
+
+        if (currentElement) {
+            currentElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }, [currentSentenceIndex, isReading]);
+
     const playNextInQueue = useCallback(() => {
         if (audioQueueRef.current.length === 0 || !audioContextRef.current) {
             isPlayingRef.current = false;
@@ -115,10 +135,16 @@ const VioraReader: React.FC<VioraReaderProps> = ({ file, theme, onClose, onExpla
         const source = audioContextRef.current.createBufferSource();
         source.buffer = audioBuffer!;
         source.connect(audioContextRef.current.destination);
-        source.onended = playNextInQueue;
+        
+        source.onended = () => {
+             // Only advance sentence and play next if we weren't manually stopped
+            if (isPlayingRef.current) {
+                setCurrentSentenceIndex(prev => prev + 1);
+                playNextInQueue();
+            }
+        };
         source.start();
         
-        setCurrentSentenceIndex(prev => prev + 1);
     }, []);
 
     const processAndPlayAudio = useCallback(async (textToRead: string) => {
@@ -130,6 +156,7 @@ const VioraReader: React.FC<VioraReaderProps> = ({ file, theme, onClose, onExpla
             const audioBuffer = await decodeAudioData(audioBytes, audioContextRef.current);
             audioQueueRef.current.push(audioBuffer);
             if (!isPlayingRef.current) {
+                setCurrentSentenceIndex(0);
                 playNextInQueue();
             }
         }
@@ -142,13 +169,12 @@ const VioraReader: React.FC<VioraReaderProps> = ({ file, theme, onClose, onExpla
         }
         
         setIsReading(true);
-        setCurrentSentenceIndex(0);
         audioQueueRef.current = [];
 
         let stopped = false;
         stopReadingRef.current = () => {
             stopped = true;
-            audioQueueRef.current = [];
+            audioQueueRef.current = []; // Clear the queue
             isPlayingRef.current = false;
             setIsReading(false);
             setCurrentSentenceIndex(-1);
@@ -207,7 +233,7 @@ const VioraReader: React.FC<VioraReaderProps> = ({ file, theme, onClose, onExpla
             const range = selection.getRangeAt(0);
             const rect = range.getBoundingClientRect();
             setSelectionPopup({
-                top: rect.bottom + window.scrollY - 60, // Adjust for header height
+                top: rect.top + window.scrollY - 60,
                 left: rect.left + window.scrollX + rect.width / 2,
                 text: selection.toString().trim(),
             });
@@ -242,7 +268,7 @@ const VioraReader: React.FC<VioraReaderProps> = ({ file, theme, onClose, onExpla
     const renderContent = () => {
         if (isReading) {
              return sentences.map((sentence, index) => (
-                <span key={index} className={`transition-colors duration-300 ${index === currentSentenceIndex ? 'bg-purple-500/30' : ''}`}>
+                <span key={index} data-sentence-index={index} className={`transition-colors duration-300 ${index === currentSentenceIndex ? (theme === 'professional' ? 'bg-orange-500/30' : 'bg-purple-500/30') : ''}`}>
                     {sentence}
                 </span>
             ));
@@ -314,51 +340,52 @@ const VioraReader: React.FC<VioraReaderProps> = ({ file, theme, onClose, onExpla
     );
 
     return (
-        <div className={`w-full h-full flex flex-col relative overflow-hidden animate-slide-in ${theme === 'professional' ? 'bg-gray-50 text-gray-800' : 'bg-gray-50 dark:bg-gray-900/80 text-gray-800 dark:text-gray-200'}`}>
-            {/* Header / Toolbar */}
-            <div className={`flex-shrink-0 flex items-center justify-between p-2 pl-4 border-b shadow-sm z-20 ${theme === 'professional' ? 'bg-white/90 border-gray-200' : 'bg-white/50 dark:bg-black/50 backdrop-blur-md border-black/10 dark:border-white/10'}`}>
-                <div className="flex items-center space-x-2">
-                     <div className={`flex items-center space-x-2 p-1.5 rounded-full border ${theme === 'professional' ? 'bg-gray-100 border-gray-200' : 'bg-white/20 dark:bg-black/20 border-black/10 dark:border-white/15'}`}>
-                        <button onClick={handleReadAloud} title={isReading ? "Stop Reading" : "Read Aloud"} className={`p-2 rounded-full transition-colors ${theme === 'professional' ? 'hover:bg-gray-200' : 'hover:bg-black/10 dark:hover:bg-white/10'}`}>
-                            {isReading ? <PauseIcon className="w-5 h-5" /> : <PlayIcon className="w-5 h-5" />}
-                        </button>
-                        <button onClick={handleSummarizeDocument} title="Summarize Document" className={`p-2 rounded-full transition-colors ${theme === 'professional' ? 'hover:bg-gray-200' : 'hover:bg-black/10 dark:hover:bg-white/10'}`}>
-                            <SummarizeIcon className="w-5 h-5" />
-                        </button>
-                        <div className={`w-px h-6 ${theme === 'professional' ? 'bg-gray-200' : 'bg-black/20 dark:bg-white/20'}`}></div>
-                        <button onClick={handleAutoHighlight} title="Auto-Highlight Key Points" className={`p-2 rounded-full transition-colors ${theme === 'professional' ? 'hover:bg-gray-200' : 'hover:bg-black/10 dark:hover:bg-white/10'}`}>
-                            <HighlightIcon className="w-5 h-5 text-yellow-500" />
-                        </button>
-                        <button onClick={handleFindAnswers} title="Find & Highlight Answers" className={`p-2 rounded-full transition-colors ${theme === 'professional' ? 'hover:bg-gray-200' : 'hover:bg-black/10 dark:hover:bg-white/10'}`}>
-                            <HighlightIcon className="w-5 h-5 text-green-500" />
-                        </button>
-                        <div className={`w-px h-6 ${theme === 'professional' ? 'bg-gray-200' : 'bg-black/20 dark:bg-white/20'}`}></div>
-                        <button onClick={() => setShowBookmarksPanel(true)} title="Show Bookmarks" className={`p-2 rounded-full relative transition-colors ${theme === 'professional' ? 'hover:bg-gray-200' : 'hover:bg-black/10 dark:hover:bg-white/10'}`}>
-                            <BookmarkIcon className="w-5 h-5" />
-                            {bookmarks.size > 0 && <span className={`absolute top-0 right-0 block h-4 w-4 rounded-full text-white text-[10px] ring-2 ${theme === 'professional' ? 'bg-orange-500 ring-white' : 'bg-purple-600 ring-white/50 dark:ring-black/50'}`}>{bookmarks.size}</span>}
-                        </button>
-                         <button onClick={() => getQuizOptionsAndGenerate(text)} title="Generate Test" className={`p-2 rounded-full transition-colors ${theme === 'professional' ? 'hover:bg-gray-200' : 'hover:bg-black/10 dark:hover:bg-white/10'}`}>
-                            <ClipboardListIcon className="w-5 h-5" />
-                        </button>
-                        <button onClick={() => onGenerateFlashcards(text)} title="Create Flashcards" className={`p-2 rounded-full transition-colors ${theme === 'professional' ? 'hover:bg-gray-200' : 'hover:bg-black/10 dark:hover:bg-white/10'}`}>
-                            <LayersIcon className="w-5 h-5" />
-                        </button>
-                    </div>
-                </div>
-                 <h2 className="text-sm font-bold truncate hidden md:block" title={file.name}>{file.name}</h2>
-                <div className="flex items-center space-x-2">
-                    <button onClick={handleDownload} title="Download Original File" className={`p-2 rounded-full transition-colors ${theme === 'professional' ? 'hover:bg-gray-200' : 'hover:bg-black/10 dark:hover:bg-white/10'}`}>
-                        <DownloadIcon className="w-5 h-5" />
-                    </button>
-                    <button onClick={onClose} title="Exit Reader" className={`p-2 rounded-full transition-colors ${theme === 'professional' ? 'hover:bg-gray-200' : 'hover:bg-black/10 dark:hover:bg-white/10'}`}>
-                        <CloseIcon className="w-5 h-5" />
-                    </button>
-                </div>
+        <div className={`w-full h-full flex flex-col relative overflow-hidden animate-slide-in ${theme === 'professional' ? 'bg-gray-50/40 backdrop-blur-sm text-gray-800' : 'bg-transparent dark:bg-gray-900/40 dark:backdrop-blur-sm text-gray-800 dark:text-gray-200'}`}>
+            {/* Top Bar */}
+             <div className={`flex-shrink-0 flex items-center justify-between p-2 pl-4 border-b z-10 ${theme === 'professional' ? 'bg-white/30 backdrop-blur-md border-gray-200/50' : 'bg-black/20 backdrop-blur-md border-white/5'}`}>
+                <h2 className="text-sm font-bold truncate" title={file.name}>{file.name}</h2>
+                 <button onClick={onClose} title="Exit Reader" className={`p-2 rounded-full transition-colors ${theme === 'professional' ? 'hover:bg-gray-200' : 'hover:bg-black/10 dark:hover:bg-white/10'}`}>
+                    <CloseIcon className="w-5 h-5" />
+                </button>
             </div>
             
             {/* Content */}
-            <div ref={contentRef} onMouseUp={handleMouseUp} className={`flex-1 overflow-y-auto p-6 md:p-8 lg:p-12 pl-12 md:pl-16 lg:pl-20 text-lg leading-relaxed ${theme === 'professional' ? 'selection:bg-orange-200' : 'selection:bg-purple-300 dark:selection:bg-purple-700'}`}>
+            <div ref={contentRef} onMouseUp={handleMouseUp} className={`flex-1 overflow-y-auto p-6 md:p-8 lg:p-12 pl-12 md:pl-16 lg:pl-20 text-lg leading-relaxed pb-28 ${theme === 'professional' ? 'selection:bg-orange-200' : 'selection:bg-purple-300 dark:selection:bg-purple-700'}`}>
                 {isLoading ? <ReaderSkeleton /> : error ? <div className="text-red-500 text-center">{error}</div> : renderContent()}
+            </div>
+
+             {/* Floating Toolbar */}
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20">
+                 <div className={`flex items-center space-x-2 p-1.5 rounded-full border shadow-2xl ${theme === 'professional' ? 'bg-white/30 border-gray-200/50 backdrop-blur-lg' : 'bg-black/10 border-white/5 backdrop-blur-xl'}`}>
+                    <button onClick={handleReadAloud} title={isReading ? "Stop Reading" : "Read Aloud"} className={`p-2 rounded-full transition-colors ${theme === 'professional' ? 'hover:bg-gray-200' : 'hover:bg-black/10 dark:hover:bg-white/10'}`}>
+                        {isReading ? <PauseIcon className="w-5 h-5" /> : <PlayIcon className="w-5 h-5" />}
+                    </button>
+                    <button onClick={handleSummarizeDocument} title="Summarize Document" className={`p-2 rounded-full transition-colors ${theme === 'professional' ? 'hover:bg-gray-200' : 'hover:bg-black/10 dark:hover:bg-white/10'}`}>
+                        <SummarizeIcon className="w-5 h-5" />
+                    </button>
+                    <div className={`w-px h-6 ${theme === 'professional' ? 'bg-gray-200' : 'bg-black/20 dark:bg-white/20'}`}></div>
+                    <button onClick={handleAutoHighlight} title="Auto-Highlight Key Points" className={`p-2 rounded-full transition-colors ${theme === 'professional' ? 'hover:bg-gray-200' : 'hover:bg-black/10 dark:hover:bg-white/10'}`}>
+                        <HighlightIcon className="w-5 h-5 text-yellow-500" />
+                    </button>
+                    <button onClick={handleFindAnswers} title="Find & Highlight Answers" className={`p-2 rounded-full transition-colors ${theme === 'professional' ? 'hover:bg-gray-200' : 'hover:bg-black/10 dark:hover:bg-white/10'}`}>
+                        <HighlightIcon className="w-5 h-5 text-green-500" />
+                    </button>
+                    <div className={`w-px h-6 ${theme === 'professional' ? 'bg-gray-200' : 'bg-black/20 dark:bg-white/20'}`}></div>
+                    <button onClick={() => setShowBookmarksPanel(true)} title="Show Bookmarks" className={`p-2 rounded-full relative transition-colors ${theme === 'professional' ? 'hover:bg-gray-200' : 'hover:bg-black/10 dark:hover:bg-white/10'}`}>
+                        <BookmarkIcon className="w-5 h-5" />
+                        {bookmarks.size > 0 && <span className={`absolute top-0 right-0 block h-4 w-4 rounded-full text-white text-[10px] ring-2 ${theme === 'professional' ? 'bg-orange-500 ring-white' : 'bg-purple-600 ring-white/50 dark:ring-black/50'}`}>{bookmarks.size}</span>}
+                    </button>
+                     <button onClick={() => getQuizOptionsAndGenerate(text)} title="Generate Test" className={`p-2 rounded-full transition-colors ${theme === 'professional' ? 'hover:bg-gray-200' : 'hover:bg-black/10 dark:hover:bg-white/10'}`}>
+                        <ClipboardListIcon className="w-5 h-5" />
+                    </button>
+                    <button onClick={() => onGenerateFlashcards(text)} title="Create Flashcards" className={`p-2 rounded-full transition-colors ${theme === 'professional' ? 'hover:bg-gray-200' : 'hover:bg-black/10 dark:hover:bg-white/10'}`}>
+                        <LayersIcon className="w-5 h-5" />
+                    </button>
+                     <div className={`w-px h-6 ${theme === 'professional' ? 'bg-gray-200' : 'bg-black/20 dark:bg-white/20'}`}></div>
+                     <button onClick={handleDownload} title="Download Original File" className={`p-2 rounded-full transition-colors ${theme === 'professional' ? 'hover:bg-gray-200' : 'hover:bg-black/10 dark:hover:bg-white/10'}`}>
+                        <DownloadIcon className="w-5 h-5" />
+                    </button>
+                </div>
             </div>
             
             {/* Selection Popup */}
@@ -367,11 +394,18 @@ const VioraReader: React.FC<VioraReaderProps> = ({ file, theme, onClose, onExpla
                     className={`absolute z-30 flex items-center shadow-2xl rounded-lg overflow-hidden border ${theme === 'professional' ? 'bg-white border-gray-200' : 'bg-white dark:bg-gray-800 border-black/10 dark:border-white/15'}`}
                     style={{ top: `${selectionPopup.top + 5}px`, left: `${selectionPopup.left}px`, transform: 'translateX(-50%)' }}
                 >
+                     <button 
+                        onClick={() => { onSimpleExplain(selectionPopup.text, contentRef.current?.scrollTop || 0); setSelectionPopup(null); }}
+                        className={`px-3 py-2 text-sm transition-colors flex items-center gap-1.5 ${theme === 'professional' ? 'hover:bg-orange-500/10' : 'hover:bg-purple-500/10'}`}
+                    >
+                        <LightbulbIcon className="w-4 h-4"/> Explain Simply
+                    </button>
+                    <div className={`w-px h-4 ${theme === 'professional' ? 'bg-gray-200' : 'bg-black/10 dark:bg-white/15'}`}></div>
                     <button 
                         onClick={() => { onExplain(selectionPopup.text, contentRef.current?.scrollTop || 0); setSelectionPopup(null); }}
                         className={`px-3 py-2 text-sm transition-colors ${theme === 'professional' ? 'hover:bg-orange-500/10' : 'hover:bg-purple-500/10'}`}
                     >
-                        Explain
+                        Explain Deeply
                     </button>
                     <div className={`w-px h-4 ${theme === 'professional' ? 'bg-gray-200' : 'bg-black/10 dark:bg-white/15'}`}></div>
                     <button 

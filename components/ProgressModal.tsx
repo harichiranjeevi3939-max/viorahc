@@ -3,7 +3,8 @@ import { getStudyProgress } from '../utils/localStorageUtils';
 import type { QuizAttempt } from '../types';
 import { CloseIcon, BrainCircuitIcon, CheckCircleIcon, XCircleIcon } from './icons';
 import { MarkdownRenderer } from '../utils/markdownUtils';
-import type { Theme } from '../App';
+// Fix: Corrected the import path for the 'Theme' type.
+import type { Theme } from '../types';
 
 interface ProgressModalProps {
     onClose: () => void;
@@ -64,7 +65,8 @@ const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultCh
         if (sortField === 'score') {
             const scoreA = a.totalQuestions > 0 ? a.score / a.totalQuestions : 0;
             const scoreB = b.totalQuestions > 0 ? b.score / b.totalQuestions : 0;
-            return sortOrder === 'desc' ? scoreB - scoreA : scoreA - scoreB;
+            // Fix: Corrected sorting logic to handle potential type issues from localStorage by ensuring values are numbers.
+            return sortOrder === 'desc' ? Number(scoreB) - Number(scoreA) : Number(scoreA) - Number(scoreB);
         }
         if (sortField === 'topic') {
             if (a.topic && !b.topic) return -1;
@@ -237,7 +239,7 @@ const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultCh
         }
         // Default to bar chart
         return (
-            <div className={`h-32 flex items-end justify-around gap-2 px-2 border-b border-l relative pl-10 ${theme === 'professional' ? 'border-gray-300' : 'border-gray-500/20'}`}>
+            <div className={`h-32 flex items-end justify-around gap-2 px-2 border-b border-l relative pl-10 ${theme === 'professional' ? 'border-gray-300' : 'border-gray-700'}`}>
                 <span className="absolute -left-1 top-[-8px] text-xs text-gray-500 w-8 text-right pr-2">100%</span>
                 <span className="absolute -left-1 top-1/2 -translate-y-1/2 text-xs text-gray-500 w-8 text-right pr-2">50%</span>
                 <span className="absolute -left-1 bottom-[-8px] text-xs text-gray-500 w-8 text-right pr-2">0%</span>
@@ -265,11 +267,11 @@ const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultCh
     }
 
     return (
-        <div className="absolute inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4" onClick={onClose}>
-            <div ref={modalRef} className={`rounded-xl shadow-2xl max-w-3xl w-full relative max-h-[90vh] flex flex-col animate-slide-in transition-colors duration-300 ${theme === 'professional' ? 'bg-white/95 text-gray-800' : 'bg-gray-50/80 dark:bg-gray-900/80 backdrop-blur-xl'}`} onClick={e => e.stopPropagation()}>
-                <div className={`p-4 border-b flex justify-between items-center flex-shrink-0 ${theme === 'professional' ? 'border-gray-200' : 'border-black/10 dark:border-white/10'}`}>
+        <div className="absolute inset-0 bg-black/30 backdrop-blur-md flex items-center justify-center z-50 p-4" onClick={onClose}>
+            <div ref={modalRef} className={`rounded-xl shadow-2xl max-w-3xl w-full relative max-h-[90vh] flex flex-col animate-slide-in transition-colors duration-300 border ${theme === 'professional' ? 'bg-white/40 backdrop-blur-lg border-white/30 text-gray-800' : 'bg-gray-900/50 backdrop-blur-xl border-white/10 text-gray-200'}`} onClick={e => e.stopPropagation()}>
+                <div className={`p-4 border-b flex justify-between items-center flex-shrink-0 ${theme === 'professional' ? 'border-gray-200' : 'border-white/10'}`}>
                     <h2 className="text-xl font-bold">Your Study Progress</h2>
-                    <button onClick={onClose} className={`p-1 rounded-full ${theme === 'professional' ? 'hover:bg-gray-500/10' : 'hover:bg-black/10 dark:hover:bg-white/10'}`}><CloseIcon/></button>
+                    <button onClick={onClose} className={`p-1 rounded-full ${theme === 'professional' ? 'hover:bg-black/5' : 'hover:bg-white/10'}`}><CloseIcon/></button>
                 </div>
                 <div className="p-6 overflow-y-auto">
                     {totalQuizzes === 0 ? (
@@ -281,21 +283,21 @@ const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultCh
                     ) : (
                         <>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 text-center">
-                                <div className={`p-4 rounded-lg ${theme === 'professional' ? 'bg-gray-100' : 'bg-black/5 dark:bg-white/5'}`}>
+                                <div className={`p-4 rounded-lg ${theme === 'professional' ? 'bg-black/5' : 'bg-white/5'}`}>
                                     <p className="text-3xl font-bold">{totalQuizzes}</p>
-                                    <p className={`text-sm ${theme === 'professional' ? 'text-gray-600' : 'text-gray-600 dark:text-gray-400'}`}>Quizzes Taken</p>
+                                    <p className={`text-sm ${theme === 'professional' ? 'text-gray-600' : 'text-gray-400'}`}>Quizzes Taken</p>
                                 </div>
-                                <div className={`p-4 rounded-lg ${theme === 'professional' ? 'bg-gray-100' : 'bg-black/5 dark:bg-white/5'}`}>
+                                <div className={`p-4 rounded-lg ${theme === 'professional' ? 'bg-black/5' : 'bg-white/5'}`}>
                                     <p className="text-3xl font-bold">{averageScore.toFixed(0)}%</p>
-                                    <p className={`text-sm ${theme === 'professional' ? 'text-gray-600' : 'text-gray-600 dark:text-gray-400'}`}>Average Score</p>
+                                    <p className={`text-sm ${theme === 'professional' ? 'text-gray-600' : 'text-gray-400'}`}>Average Score</p>
                                 </div>
-                                 <div className={`p-4 rounded-lg ${theme === 'professional' ? 'bg-gray-100' : 'bg-black/5 dark:bg-white/5'}`}>
+                                 <div className={`p-4 rounded-lg ${theme === 'professional' ? 'bg-black/5' : 'bg-white/5'}`}>
                                     <p className="text-3xl font-bold">{formatTime(progress.reduce((acc, p) => acc + p.timeTaken, 0))}</p>
-                                    <p className={`text-sm ${theme === 'professional' ? 'text-gray-600' : 'text-gray-600 dark:text-gray-400'}`}>Total Study Time</p>
+                                    <p className={`text-sm ${theme === 'professional' ? 'text-gray-600' : 'text-gray-400'}`}>Total Study Time</p>
                                 </div>
                             </div>
 
-                            <div className={`p-4 rounded-lg mb-8 ${theme === 'professional' ? 'bg-gray-100' : 'bg-black/5 dark:bg-white/5'}`}>
+                            <div className={`p-4 rounded-lg mb-8 ${theme === 'professional' ? 'bg-black/5' : 'bg-white/5'}`}>
                                 <div className="flex justify-between items-center mb-4">
                                     <h3 className="font-bold text-center">Data Visualization</h3>
                                     <div className="flex items-center text-sm border rounded-full p-0.5">
@@ -303,7 +305,7 @@ const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultCh
                                             <button 
                                                 key={type}
                                                 onClick={() => setChartType(type)}
-                                                className={`px-3 py-0.5 rounded-full capitalize transition-colors ${chartType === type ? (theme === 'professional' ? 'bg-orange-500 text-white' : 'bg-purple-600 text-white') : (theme === 'professional' ? 'hover:bg-gray-200' : 'hover:bg-black/10 dark:hover:bg-white/10')}`}
+                                                className={`px-3 py-0.5 rounded-full capitalize transition-colors ${chartType === type ? (theme === 'professional' ? 'bg-orange-500 text-white' : 'bg-violet-600 text-white') : (theme === 'professional' ? 'hover:bg-gray-200' : 'hover:bg-white/10')}`}
                                             >{type}</button>
                                         ))}
                                     </div>
@@ -322,7 +324,7 @@ const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultCh
                                         id="sort-field"
                                         value={sortField}
                                         onChange={e => setSortField(e.target.value as SortField)}
-                                        className={`rounded-md border-0 py-1 pl-2 pr-7 ring-1 ring-inset focus:ring-2 transition-colors ${theme === 'professional' ? 'bg-gray-100 text-gray-700 ring-gray-300 focus:ring-orange-500' : 'bg-white/10 dark:bg-black/20 text-gray-700 dark:text-gray-300 ring-white/10 dark:ring-black/20 focus:ring-purple-500'}`}
+                                        className={`rounded-md border-0 py-1 pl-2 pr-7 ring-1 ring-inset focus:ring-2 transition-colors ${theme === 'professional' ? 'bg-gray-100 text-gray-700 ring-gray-300 focus:ring-orange-500' : 'bg-black/20 text-gray-300 ring-white/10 focus:ring-violet-500'}`}
                                     >
                                         <option value="date">Date</option>
                                         <option value="score">Score</option>
@@ -333,7 +335,7 @@ const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultCh
                                         id="sort-order"
                                         value={sortOrder}
                                         onChange={e => setSortOrder(e.target.value as SortOrder)}
-                                        className={`rounded-md border-0 py-1 pl-2 pr-7 ring-1 ring-inset focus:ring-2 transition-colors ${theme === 'professional' ? 'bg-gray-100 text-gray-700 ring-gray-300 focus:ring-orange-500' : 'bg-white/10 dark:bg-black/20 text-gray-700 dark:text-gray-300 ring-white/10 dark:ring-black/20 focus:ring-purple-500'}`}
+                                        className={`rounded-md border-0 py-1 pl-2 pr-7 ring-1 ring-inset focus:ring-2 transition-colors ${theme === 'professional' ? 'bg-gray-100 text-gray-700 ring-gray-300 focus:ring-orange-500' : 'bg-black/20 text-gray-300 ring-white/10 focus:ring-violet-500'}`}
                                     >
                                         <option value="desc">Descending</option>
                                         <option value="asc">Ascending</option>
@@ -342,7 +344,7 @@ const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultCh
                             </div>
                             <ul className="space-y-3">
                                 {sortedProgress.map(attempt => (
-                                    <li key={attempt.id} className={`rounded-lg border transition-shadow hover:shadow-md ${theme === 'professional' ? 'bg-white border-gray-200' : 'bg-white/50 dark:bg-black/30 border-black/10 dark:border-white/15'}`}>
+                                    <li key={attempt.id} className={`rounded-lg border transition-shadow hover:shadow-md ${theme === 'professional' ? 'bg-white/80 border-gray-200' : 'bg-black/30 border-white/15'}`}>
                                         <button 
                                             className="p-3 w-full flex justify-between items-center cursor-pointer text-left"
                                             onClick={() => setExpandedAttemptId(expandedAttemptId === attempt.id ? null : attempt.id)}
@@ -351,15 +353,15 @@ const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultCh
                                         >
                                             <div>
                                                 <p className="font-semibold">{attempt.topic || 'General Quiz'}</p>
-                                                <p className={`text-sm ${theme === 'professional' ? 'text-gray-600' : 'text-gray-600 dark:text-gray-400'}`}>{new Date(attempt.date).toLocaleString()} &bull; {attempt.difficulty} &bull; {formatTime(attempt.timeTaken)}</p>
+                                                <p className={`text-sm ${theme === 'professional' ? 'text-gray-600' : 'text-gray-400'}`}>{new Date(attempt.date).toLocaleString()} &bull; {attempt.difficulty} &bull; {formatTime(attempt.timeTaken)}</p>
                                             </div>
                                             <div className="text-right">
                                                 <p className="font-bold text-lg">{attempt.score} / {attempt.totalQuestions}</p>
-                                                <p className={`text-sm ${theme === 'professional' ? 'text-gray-600' : 'text-gray-600 dark:text-gray-400'}`}>{((attempt.totalQuestions > 0 ? attempt.score / attempt.totalQuestions : 0) * 100).toFixed(0)}%</p>
+                                                <p className={`text-sm ${theme === 'professional' ? 'text-gray-600' : 'text-gray-400'}`}>{((attempt.totalQuestions > 0 ? attempt.score / attempt.totalQuestions : 0) * 100).toFixed(0)}%</p>
                                             </div>
                                         </button>
                                         {expandedAttemptId === attempt.id && (
-                                            <div id={`attempt-${attempt.id}`} className={`p-4 border-t space-y-4 ${theme === 'professional' ? 'border-gray-200' : 'border-black/10 dark:border-white/10'}`}>
+                                            <div id={`attempt-${attempt.id}`} className={`p-4 border-t space-y-4 ${theme === 'professional' ? 'border-gray-200' : 'border-white/10'}`}>
                                                 <h4 className="font-bold">Quiz Review</h4>
                                                 {attempt.results.map((result, index) => (
                                                     <div key={index} className={`p-3 rounded-lg ${result.isCorrect ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
@@ -372,7 +374,7 @@ const ProgressModal: React.FC<ProgressModalProps> = ({ onClose, theme, defaultCh
                                                             )}
                                                             <p>
                                                                 <span className="font-bold">Your answer: </span>
-                                                                <span className={result.isCorrect ? (theme === 'professional' ? 'text-green-700' : 'text-green-800 dark:text-green-300') : (theme === 'professional' ? 'text-red-700 line-through' : 'text-red-800 dark:text-red-300 line-through')}>
+                                                                <span className={result.isCorrect ? (theme === 'professional' ? 'text-green-700' : 'text-green-300') : (theme === 'professional' ? 'text-red-700 line-through' : 'text-red-300 line-through')}>
                                                                     <MarkdownRenderer text={result.selectedAnswer || "Not answered"} />
                                                                 </span>
                                                             </p>

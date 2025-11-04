@@ -1,12 +1,18 @@
+// Fix: Added Theme type to be shared across the application.
+export type Theme = 'dark' | 'professional';
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'model' | 'system';
   text: string;
+  timestamp: number; // Added for data lifecycle management
   attachments?: UploadedFile[];
   isLoading?: boolean;
   studyTip?: string;
   suggestions?: string[];
+  followUpPrompts?: string[]; // For "Dive Deeper" interactive explanations
   isInitial?: boolean;
+  personality?: VioraPersonality;
 }
 
 export interface MCQ {
@@ -51,13 +57,13 @@ export interface QuizAttempt {
   topic?: string;
 }
 
-export type VioraPersonality = 'classic' | 'analytical' | 'creative' | 'concise';
+export type VioraPersonality = 'classic' | 'creative';
 
 export interface AppSettings {
   autoTheme: boolean;
   showSuggestions: boolean;
   showRetryQuiz: boolean;
-  personality: VioraPersonality;
+  enable2CMode: boolean;
 }
 
 // Viora Group Chat Types
@@ -72,16 +78,20 @@ export interface FlashcardPayload {
   flashcards: Flashcard[];
 }
 
+export interface ImagePayload {
+    src: string; // base64 data URL
+    fileName: string;
+}
+
 export interface GroupChatMessage {
   id: string;
   userId: string;
   userName: string;
   timestamp: number;
   isViora?: boolean;
-  // New structure
-  type: 'text' | 'system' | 'quiz' | 'flashcards';
-  text?: string; // For text and system messages
-  payload?: QuizPayload | FlashcardPayload; // For quiz and flashcard messages
+  type: 'text' | 'system' | 'quiz' | 'flashcards' | 'image';
+  text?: string; // Optional for image/interactive messages
+  payload?: QuizPayload | FlashcardPayload | ImagePayload;
 }
 
 export interface GroupChatMember {
