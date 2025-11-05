@@ -113,7 +113,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message: msg, theme, settings
                                 : <Volume2Icon className={`w-5 h-5 ${theme === 'professional' ? 'text-gray-500' : 'text-gray-300'}`} />}
                         </button>
                     )}
-                     {settings.enable2CMode && msg.role === 'model' && msg.personality && (
+                     {msg.role === 'model' && msg.personality && (
                         <div className={`absolute -top-2 -left-2 p-1 rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity border ${theme === 'professional' ? 'bg-white/80 border-gray-200' : 'bg-gray-800/80 border-white/10'}`}>
                             {msg.personality === 'creative' ? <LightbulbIcon className="w-4 h-4 text-yellow-500"/> : <BrainCircuitIcon className="w-4 h-4" />}
                         </div>

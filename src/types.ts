@@ -63,7 +63,7 @@ export interface AppSettings {
   autoTheme: boolean;
   showSuggestions: boolean;
   showRetryQuiz: boolean;
-  enable2CMode: boolean;
+  vioraPersonality: VioraPersonality;
 }
 
 // Viora Group Chat Types
@@ -89,10 +89,22 @@ export interface GroupChatMessage {
   userName: string;
   timestamp: number;
   isViora?: boolean;
-  type: 'text' | 'system' | 'quiz' | 'flashcards' | 'image';
+  type: 'text' | 'system' | 'quiz' | 'flashcards' | 'image' | 'canvas';
   text?: string; // Optional for image/interactive messages
-  payload?: QuizPayload | FlashcardPayload | ImagePayload;
+  payload?: QuizPayload | FlashcardPayload | ImagePayload | CanvasPayload;
 }
+
+export interface CanvasContribution {
+    userId: string;
+    userName: string;
+    text: string;
+}
+
+export interface CanvasPayload {
+    problem: string;
+    contributions: CanvasContribution[];
+}
+
 
 export interface GroupChatMember {
     userId: string;

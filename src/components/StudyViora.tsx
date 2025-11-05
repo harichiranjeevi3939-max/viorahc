@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 // Fix: Import ChatMessage type to resolve type errors.
-import type { AppSettings, Theme, UploadedFile, Flashcard, ChatMessage } from '../types';
-import { generateExplanation, generateFlashcards, generateSummary, generateSimpleExplanation } from '../services/geminiService';
+import type { AppSettings, Theme, UploadedFile, Flashcard, ChatMessage, QuizPayload, FlashcardPayload } from '../types';
+import { generateExplanation, generateFlashcards, generateTopicForContent, generateSimpleExplanation } from '../services/geminiService';
 import { useChatManager } from '../hooks/useChatManager';
 import { useQuizManager } from '../hooks/useQuizManager';
 import ChatView from './chat/ChatView';
@@ -18,9 +18,11 @@ interface StudyVioraProps {
     onSetTheme: React.Dispatch<React.SetStateAction<Theme>>;
     onSetSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
     onShowProgress: (chartType: string | null) => void;
+    onShareToGroup: (payload: QuizPayload | FlashcardPayload, type: 'quiz' | 'flashcards') => void;
+    activeGroupId: string | null;
 }
 
-const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, onSetSettings, onShowProgress }) => {
+const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, onSetSettings, onShowProgress, onShareToGroup, activeGroupId }) => {
     const [mode, setMode] = useState<Mode>('chat');
     
     // Fix: Lift state that is shared between hooks to resolve the circular dependency that confuses the TypeScript type checker.
@@ -68,15 +70,16 @@ const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, on
 
 
     // State managed by the main controller
-    const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
+    const [flashcardData, setFlashcardData] = useState<{ topic: string, flashcards: Flashcard[] } | null>(null);
     const [fileForReader, setFileForReader] = useState<UploadedFile | null>(null);
     const [readerScrollPosition, setReaderScrollPosition] = useState<number | null>(null);
     
     const handleGenerateFlashcardsFromContent = useCallback(async (content: string) => {
         setIsLoading(true);
         try {
+            const topic = await generateTopicForContent(content);
             const generatedFlashcards = await generateFlashcards(content);
-            setFlashcards(generatedFlashcards);
+            setFlashcardData({ topic, flashcards: generatedFlashcards });
             setMode('flashcards');
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
@@ -212,9 +215,9 @@ const StudyViora: React.FC<StudyVioraProps> = ({ theme, settings, onSetTheme, on
             case 'test': 
                 return <QuizView mcqs={mcqs} userAnswers={userAnswers} onAnswerSelect={handleAnswerSelect} onSubmit={handleSubmitTest} onExit={() => setMode('chat')} theme={theme} currentQuizContext={currentQuizContext} />;
             case 'test_results': 
-                return <QuizResultsView results={testResults} onRetry={() => generateTestFromContent(currentQuizContext!.content, mcqs.length, currentQuizContext!.difficulty)} onExit={() => setMode('chat')} onExplainRequest={handleExplanationRequest} theme={theme} />;
+                return <QuizResultsView results={testResults} onRetry={() => generateTestFromContent(currentQuizContext!.content, mcqs.length, currentQuizContext!.difficulty)} onExit={() => setMode('chat')} onExplainRequest={handleExplanationRequest} theme={theme} mcqs={mcqs} quizContext={currentQuizContext} onShare={onShareToGroup} activeGroupId={activeGroupId} />;
             case 'flashcards': 
-                return <FlashcardView flashcards={flashcards} setFlashcards={setFlashcards} onExit={() => setMode('chat')} theme={theme} />;
+                return flashcardData && <FlashcardView flashcardData={flashcardData} onExit={() => setMode('chat')} theme={theme} onShare={onShareToGroup} activeGroupId={activeGroupId} />;
             case 'chat':
             default:
                 return <ChatView {...chatViewProps} />;

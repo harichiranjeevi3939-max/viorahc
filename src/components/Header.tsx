@@ -26,7 +26,7 @@ const Header: React.FC<HeaderProps> = ({ theme, onShowProgress, onToggleTheme, o
           </h1>
         </div>
         <div className="flex items-center space-x-2 sm:space-x-4">
-           <p className={`text-xs hidden sm:block ${theme === 'professional' ? 'text-gray-500' : 'text-gray-400'}`}>Crafted by Hari chiranjeevi</p>
+           <p className={`text-xs hidden sm:block ${theme === 'professional' ? 'text-gray-500' : 'text-gray-400'}`}>A NEXRA Project</p>
            <div className={`w-px h-6 hidden sm:block ${theme === 'professional' ? 'bg-gray-300' : 'bg-gray-600'}`}></div>
            <button
             onClick={onToggleTheme}

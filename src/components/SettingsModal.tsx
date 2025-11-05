@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import type { AppSettings } from '../types';
+import type { AppSettings, VioraPersonality } from '../types';
 // Fix: Corrected the import path for the 'Theme' type.
 import type { Theme } from '../types';
 import { CloseIcon } from './icons';
@@ -85,6 +85,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, theme, settings,
         onSettingsChange(prev => ({...prev, [id]: value}));
     };
 
+    const handlePersonalityChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        onSettingsChange(prev => ({ ...prev, vioraPersonality: e.target.value as VioraPersonality }));
+    };
+
     return (
         <div className="absolute inset-0 bg-black/30 backdrop-blur-md flex items-center justify-center z-50 p-4" onClick={onClose}>
             <div ref={modalRef} className={`rounded-xl shadow-2xl max-w-lg w-full relative flex flex-col animate-slide-in transition-colors duration-300 border ${theme === 'professional' ? 'bg-white/40 backdrop-blur-lg border-white/30 text-gray-800' : 'bg-gray-900/50 backdrop-blur-xl border-white/10 text-gray-200'}`} onClick={e => e.stopPropagation()}>
@@ -93,14 +97,21 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, theme, settings,
                     <button onClick={onClose} className={`p-1 rounded-full ${theme === 'professional' ? 'hover:bg-black/5' : 'hover:bg-white/10'}`}><CloseIcon/></button>
                 </div>
                 <div className="p-6 divide-y divide-gray-200 dark:divide-white/10">
-                    <ToggleSwitch 
-                        id="enable2CMode"
-                        label="Enable Automatic 2C Mode"
-                        description="Automatically switch between Classic (fast) and Creative (deep) modes."
-                        checked={settings.enable2CMode}
-                        onChange={handleSettingChange}
-                        theme={theme}
-                    />
+                    <div className="flex justify-between items-center py-4">
+                        <div>
+                            <label htmlFor="vioraPersonality" className="font-semibold block">Viora's Personality</label>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Choose how Viora interacts with you.</p>
+                        </div>
+                        <select
+                            id="vioraPersonality"
+                            value={settings.vioraPersonality}
+                            onChange={handlePersonalityChange}
+                            className={`rounded-md border-0 py-1.5 pl-3 pr-8 ring-1 ring-inset focus:ring-2 transition-colors ${theme === 'professional' ? 'bg-gray-100 text-gray-700 ring-gray-300 focus:ring-orange-500' : 'bg-black/20 text-gray-300 ring-white/10 focus:ring-violet-500'}`}
+                        >
+                            <option value="classic">Classic</option>
+                            <option value="creative">Creative</option>
+                        </select>
+                    </div>
                     <ToggleSwitch 
                         id="autoTheme"
                         label="Auto Theme Switching"

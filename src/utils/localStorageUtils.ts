@@ -13,7 +13,7 @@ const defaultSettings: AppSettings = {
     autoTheme: true,
     showSuggestions: true,
     showRetryQuiz: true,
-    enable2CMode: true,
+    vioraPersonality: 'classic',
 };
 
 export const getAppSettings = (): AppSettings => {

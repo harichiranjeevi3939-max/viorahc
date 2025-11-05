@@ -4,9 +4,10 @@ import StudyViora from './components/StudyViora';
 import VioraGroupChat from './components/VioraGroupChat';
 import ProgressModal from './components/ProgressModal';
 import SettingsModal from './components/SettingsModal';
-import { getAppSettings, saveAppSettings, manageUserDataLifecycle } from './utils/localStorageUtils';
+import { getAppSettings, saveAppSettings, manageUserDataLifecycle, getActiveGroupId, getOrSetUserId } from './utils/localStorageUtils';
+import { addMessageToGroup } from './services/groupChatService';
 // Fix: Import Theme from the centralized types file.
-import type { AppSettings, Theme } from './types';
+import type { AppSettings, Theme, QuizPayload, FlashcardPayload, GroupChatMessage } from './types';
 
 const App: React.FC = () => {
   const [theme, setTheme] = useState<Theme>((localStorage.getItem('theme') as Theme) || 'dark');
@@ -14,6 +15,7 @@ const App: React.FC = () => {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isGroupChatOpen, setIsGroupChatOpen] = useState(false);
   const [chartRequest, setChartRequest] = useState<string | null>(null);
+  const [activeGroupId, setActiveGroupId] = useState<string | null>(getActiveGroupId());
 
   const [settings, setSettings] = useState<AppSettings>(() => getAppSettings());
   
@@ -24,6 +26,11 @@ const App: React.FC = () => {
   useEffect(() => {
     // Run data lifecycle management on app startup
     manageUserDataLifecycle();
+     // Periodically check for an active group ID in local storage
+    const interval = setInterval(() => {
+      setActiveGroupId(getActiveGroupId());
+    }, 1000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -76,6 +83,27 @@ const App: React.FC = () => {
     setIsGroupChatOpen(false);
     groupChatButtonRef.current?.focus();
   };
+  
+  const handleShareToGroup = (payload: QuizPayload | FlashcardPayload, type: 'quiz' | 'flashcards') => {
+      if (!activeGroupId) {
+          alert("You must be in a group chat to share content.");
+          return;
+      }
+      const userId = getOrSetUserId();
+      const userName = localStorage.getItem('viora-username') || 'A studymate';
+
+      const message: GroupChatMessage = {
+          id: self.crypto.randomUUID(),
+          userId,
+          userName,
+          timestamp: Date.now(),
+          type,
+          payload,
+      };
+
+      addMessageToGroup(activeGroupId, message);
+      alert(`Successfully shared the ${type} with Group #${activeGroupId}!`);
+  };
 
 
   return (
@@ -97,6 +125,8 @@ const App: React.FC = () => {
           onSetTheme={setTheme}
           onSetSettings={setSettings}
           onShowProgress={handleShowProgress}
+          onShareToGroup={handleShareToGroup}
+          activeGroupId={activeGroupId}
         />
       </main>
       {isProgressModalOpen && <ProgressModal onClose={handleCloseProgressModal} theme={theme} defaultChart={chartRequest} />}

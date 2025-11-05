@@ -1,6 +1,6 @@
 // Fix: Import React to make the React namespace available for types.
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { generateChatResponseStream, generateSuggestions, determinePersonality, extractTextFromFile, generateUserProfileSummary } from '../services/geminiService';
+import { generateChatResponseStream, generateSuggestions, extractTextFromFile, generateUserProfileSummary } from '../services/geminiService';
 import type { ChatMessage, UploadedFile, AppSettings, VioraPersonality, QuizAttempt, Theme } from '../types';
 import { fileToBase64 } from '../utils/fileUtils';
 import { decode, decodeAudioData } from '../utils/audioUtils';
@@ -218,7 +218,7 @@ export const useChatManager = ({
         setInput('');
         setUploadedFiles([]);
 
-        const personality = settings.enable2CMode ? await determinePersonality(textToSend) : 'classic';
+        const personality = settings.vioraPersonality;
         setCurrentPersonality(personality);
         
         const userProfileSummary = await generateUserProfileSummary(historyBeforeSend, getStudyProgress());
@@ -274,9 +274,10 @@ export const useChatManager = ({
                            }
                         }
                         else if (action === 'set_setting') {
-                            const validSettings: (keyof AppSettings)[] = ['autoTheme', 'showSuggestions', 'showRetryQuiz', 'enable2CMode'];
+                            const validSettings: (keyof AppSettings)[] = ['autoTheme', 'showSuggestions', 'showRetryQuiz', 'vioraPersonality'];
                             if (validSettings.includes(settingName as keyof AppSettings)) {
-                                onSetSettings(prev => ({...prev, [settingName as keyof AppSettings]: value === 'true'}));
+                                const settingValue = (value === 'true') ? true : (value === 'false' ? false : value);
+                                onSetSettings(prev => ({...prev, [settingName as keyof AppSettings]: settingValue}));
                             } else {
                                 confirmationText = `Sorry, I can't find a setting called "${settingName}".`;
                             }

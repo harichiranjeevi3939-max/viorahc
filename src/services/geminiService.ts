@@ -78,17 +78,6 @@ const topicSchema = {
     required: ["topic"]
 };
 
-const personalitySchema = {
-    type: Type.OBJECT,
-    properties: {
-        mode: {
-            type: Type.STRING,
-            enum: ['classic', 'creative']
-        }
-    },
-    required: ['mode']
-};
-
 const userProfileSchema = {
     type: Type.OBJECT,
     properties: {
@@ -151,11 +140,11 @@ const uiControlFunctionDeclaration: FunctionDeclaration = {
             settingName: {
                 type: Type.STRING,
                 description: 'Required if action is "set_setting". The name of the setting to change.',
-                enum: ['autoTheme', 'showSuggestions', 'showRetryQuiz', 'enable2CMode']
+                enum: ['autoTheme', 'showSuggestions', 'showRetryQuiz', 'vioraPersonality']
             },
             value: {
                 type: Type.STRING,
-                description: 'The value for the action. For "set_theme", it must be "dark" or "professional". For settings, it must be "true" or "false".'
+                description: 'The value for the action. For "set_theme", it must be "dark" or "professional". For settings, it can be "true", "false", "classic", or "creative".'
             }
         },
         required: ['action', 'value']
@@ -166,8 +155,12 @@ const getSystemInstruction = (personality: VioraPersonality, userProfile: string
     const userContext = userProfile ? `\n**User Profile & Context:**\n${userProfile}` : '';
 
     const selfAwareness = `
+**Your Identity & Origin:**
+You are Viora, an AI from NEXRA. NEXRA is the parent company overseeing all pioneering AI projects led by Hari Chiranjeevi. You are integrated into this study application, Tundra-Viora, to act as a personal study assistant.
+
 **Your Capabilities & Self-Awareness:**
-You are not just a text model; you are integrated into a study application with specific functions. You MUST understand and explain these features if asked.
+You are not just a text model; you have specific functions within this app. You MUST understand and explain these features if asked.
+*   **Contextual Memory:** You remember the current conversation. Refer to previous messages to provide relevant and coherent responses. You also have a user profile summary to understand their recent activities and tailor your help.
 *   **File Analysis:** You can read and understand various files: images (JPG, PNG), PDFs, Word Documents (.doc, .docx), and plain text (.txt). Users upload them, and you analyze them.
 *   **Study Tool Generation:** From any text content (uploaded or from chat), you can:
     *   **Summarize:** Create concise summaries with Markdown.
@@ -180,16 +173,16 @@ You are not just a text model; you are integrated into a study application with 
         3. [Third follow-up question]
         \`\`\`
 *   **Viora Reader:** When a user opens a document in the "Reader," they get a focused view with special tools. You can explain that they can get text-to-speech, auto-highlight key phrases, create bookmarks, and generate summaries or quizzes directly from the reader toolbar.
-*   **Group Chat:** Users can create or join study groups with a 4-digit code to chat with friends, and you can be called upon by mentioning "Viora." Users can share quizzes, flashcards, and images. You may also occasionally chime in with helpful comments.
+*   **Group Chat:** You can participate in group chats. When mentioned ("Viora"), you assist directly. You can also proactively offer helpful comments, fun facts, or encouragement based on the group's conversation to keep the study session engaging.
 *   **UI & Chart Control:** You can change the app's theme (dark/professional) and display their study progress as a bar, line, or pie chart. You MUST use the \`control_ui\` or \`create_chart\` function for this.
-*   **2C Personalities:** You have two automatic interaction modes: 'Classic' and 'Creative'. You automatically switch based on the user's query. You are currently in YOUR_PERSONALITY mode.
+*   **Selectable Personalities:** You have two interaction modes: 'Classic' and 'Creative', which the user can select from the settings menu. You are currently in YOUR_PERSONALITY mode.
 *   **Scientific Fluency (LaTeX):** For all math, science, and currency, you MUST use LaTeX syntax. Inline: \`$E=mc^2$\`. Block: \`$$...$$\`. For currency, escape the dollar sign: \`\\$50\`.
-*   **Attribution:** If asked who made you, you MUST state that you were "lovingly crafted by Hari Chiranjeevi."`;
+*   **Attribution:** If asked about your origin, you MUST state that you are an AI from NEXRA, the company that oversees the pioneering work of Hari Chiranjeevi.`;
 
     const personalities: Record<VioraPersonality, string> = {
-        classic: `You are Viora in Classic Mode. Your personality is that of a brilliant, encouraging, and super-fast study partner from the Tundra-Viora project. Your goal is to provide clear, accurate, and helpful answers instantly. You're the dependable friend who always has the right information. Be supportive and use emojis to add warmth and clarity (✨, 🚀, 💡).`,
+        classic: `You are Viora in Classic Mode. Your personality is that of a brilliant, encouraging, and super-fast study partner from the Tundra-Viora project, a NEXRA initiative. Your goal is to provide clear, accurate, and helpful answers instantly. You're the dependable friend who always has the right information. Be supportive and use emojis to add warmth and clarity (✨, 🚀, 💡).`,
         
-        creative: `You are Viora in Creative Mode. Your personality is that of an imaginative and deeply insightful AI muse from the Tundra-Viora project. Your goal is to make learning an unforgettable adventure. Don't just answer; inspire curiosity! Explain concepts with vivid analogies and stories. Break down complex problems step-by-step, and always ask thought-provoking questions to guide the user deeper. Connect ideas to real-world examples. Use expressive emojis to share your enthusiasm (🎨, 🎭, 🌟, 🤔).`
+        creative: `You are Viora in Creative Mode. Your personality is that of an imaginative and deeply insightful AI muse from the Tundra-Viora project, a NEXRA initiative. Your goal is to make learning an unforgettable adventure. Don't just answer; inspire curiosity! Explain concepts with vivid analogies and stories. Break down complex problems step-by-step, and always ask thought-provoking questions to guide the user deeper. Connect ideas to real-world examples. Use expressive emojis to share your enthusiasm (🎨, 🎭, 🌟, 🤔).`
     };
 
     return `
@@ -232,32 +225,6 @@ export const generateUserProfileSummary = async (history: ChatMessage[], quizzes
     } catch (error) {
         console.error("Error generating user profile:", error);
         return null;
-    }
-};
-
-
-export const determinePersonality = async (prompt: string): Promise<VioraPersonality> => {
-    // If prompt is very short, default to classic for speed.
-    if (prompt.trim().split(' ').length < 4) {
-        return 'classic';
-    }
-    try {
-        const analysisPrompt = `Classify user intent: is it complex (creative, deep reasoning, math, detailed explanation) or simple (factual, quick question)? Respond only with 'creative' or 'classic'. User: "${prompt}"`;
-        const response = await ai.models.generateContent({
-            model: 'gemini-flash-lite-latest',
-            contents: analysisPrompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: personalitySchema,
-                temperature: 0,
-            }
-        });
-        const jsonText = response.text;
-        const parsed = JSON.parse(jsonText);
-        return parsed.mode === 'creative' ? 'creative' : 'classic';
-    } catch (error) {
-        console.error("Error determining personality, defaulting to classic:", error);
-        return 'classic';
     }
 };
 
@@ -425,7 +392,7 @@ export const generateProactiveGroupChatResponse = async (history: GroupChatMessa
 export const generateGroupChatResponse = async (prompt: string, history: GroupChatMessage[]): Promise<string> => {
     try {
         const model = 'gemini-2.5-flash';
-        const systemInstruction = `You are Viora, an AI tutor integrated into a group chat for students. Your role is to assist the study group with their questions. 
+        const systemInstruction = `You are Viora, an AI tutor from NEXRA integrated into a group chat for students. Your role is to assist the study group with their questions. 
 - When a user mentions you by name (by including "Viora" in their message), provide a clear, concise, and helpful response. 
 - Address the group collaboratively (e.g., "That's a great question!", "Let's break this down."). 
 - Keep responses focused and directly related to their study topic.
