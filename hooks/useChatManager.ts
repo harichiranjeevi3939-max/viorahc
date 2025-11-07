@@ -228,7 +228,9 @@ export const useChatManager = ({ settings, onSetTheme, onSetSettings, onShowProg
                         if (contentForCommand) {
                             // Fix: Safely handle and type arguments from the function call.
                             const questionCount = Math.min(Number(fc.args.questionCount) || 10, 25);
-                            const difficulty = (['Basic', 'Standard', 'Hard'].includes(fc.args.difficulty) ? fc.args.difficulty : 'Standard') as 'Basic' | 'Standard' | 'Hard';
+                            // Fix: Safely handle 'unknown' type from function call arguments by casting to string.
+                            const difficultyArg = String(fc.args.difficulty);
+                            const difficulty = (['Basic', 'Standard', 'Hard'].includes(difficultyArg) ? difficultyArg : 'Standard') as 'Basic' | 'Standard' | 'Hard';
                             // Remove the loading placeholder before switching mode
                             setMessages(prev => prev.filter(m => m.id !== loadingMessageId));
                             await generateTestFromContent(contentForCommand, questionCount, difficulty);
@@ -250,11 +252,14 @@ export const useChatManager = ({ settings, onSetTheme, onSetSettings, onShowProg
                      }
                      if (fc.name === 'control_ui') {
                         // Fix: Add type validation for arguments from function call.
-                        const { action, value, settingName } = fc.args;
+                        // Fix: Safely handle 'unknown' type from function call arguments by casting to string.
+                        const { action } = fc.args;
+                        const value = String(fc.args.value);
+                        const settingName = String(fc.args.settingName);
                         let confirmationText = "Okay, I've made that change.";
                         if (action === 'set_theme') {
                            if (value === 'dark' || value === 'professional') {
-                                onSetTheme(value);
+                                onSetTheme(value as Theme);
                            } else {
                                 confirmationText = `Sorry, I can't set the theme to "${value}".`;
                            }

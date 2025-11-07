@@ -14,20 +14,8 @@ interface ChatMessageProps {
     currentlyPlaying: string | null;
 }
 
-const thinkingTexts = [
-    'Viora is thinking...',
-    'Consulting sources...',
-    'Connecting ideas...',
-    'Analyzing context...',
-    'Drafting response...',
-    'Checking facts...'
-];
-
 const ChatMessage: React.FC<ChatMessageProps> = ({ message: msg, theme, settings, onSuggestionClick, onReadMessage, currentlyPlaying }) => {
     
-    // Dynamic thinking text without causing re-renders
-    const thinkingText = thinkingTexts[Math.floor(Date.now() / 2000) % thinkingTexts.length];
-
     if (msg.role === 'system') {
         return (
             <div className="text-center my-2 animate-slide-in">
@@ -76,9 +64,10 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message: msg, theme, settings
                         </div>
                     )}
                     {msg.isLoading ? (
-                        <div className="flex items-center space-x-3 animate-thinking-v2">
-                            <HumanBrainIcon theme={theme} className="w-6 h-6" />
-                            <span className="text-sm thinking-text animate-text-gradient-shine">{thinkingText}</span>
+                         <div className="space-y-2 w-48">
+                            <div className="h-4 w-3/4 skeleton-loader-wave rounded"></div>
+                            <div className="h-4 w-5/6 skeleton-loader-wave rounded"></div>
+                            <div className="h-4 w-1/2 skeleton-loader-wave rounded"></div>
                         </div>
                     ) : (
                         <div className={`${theme === 'professional' ? 'text-gray-800' : 'text-gray-200'}`}>

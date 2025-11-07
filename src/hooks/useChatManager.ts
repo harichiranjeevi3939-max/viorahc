@@ -242,7 +242,9 @@ export const useChatManager = ({
                         if (contentForCommand) {
                             // Fix: Safely handle and type arguments from the function call.
                             const questionCount = Math.min(Number(fc.args.questionCount) || 10, 25);
-                            const difficulty = (['Basic', 'Standard', 'Hard'].includes(fc.args.difficulty) ? fc.args.difficulty : 'Standard') as 'Basic' | 'Standard' | 'Hard';
+                            // Fix: Safely handle 'unknown' type from function call arguments by casting to string.
+                            const difficultyArg = String(fc.args.difficulty);
+                            const difficulty = (['Basic', 'Standard', 'Hard'].includes(difficultyArg) ? difficultyArg : 'Standard') as 'Basic' | 'Standard' | 'Hard';
                             // Remove the loading placeholder before switching mode
                             setMessages(prev => prev.filter(m => m.id !== loadingMessageId));
                             await generateTestFromContent(contentForCommand, questionCount, difficulty);
@@ -264,22 +266,35 @@ export const useChatManager = ({
                      }
                      if (fc.name === 'control_ui') {
                         // Fix: Add type validation for arguments from function call.
-                        const { action, value, settingName } = fc.args;
+                        // Fix: Safely handle 'unknown' type from function call arguments by casting to string.
+                        const { action } = fc.args;
+                        const value = String(fc.args.value);
+                        const settingName = String(fc.args.settingName);
                         let confirmationText = "Okay, I've made that change.";
+
                         if (action === 'set_theme') {
                            if (value === 'dark' || value === 'professional') {
-                                onSetTheme(value);
+                                onSetTheme(value as Theme);
                            } else {
                                 confirmationText = `Sorry, I can't set the theme to "${value}".`;
                            }
                         }
                         else if (action === 'set_setting') {
                             const validSettings: (keyof AppSettings)[] = ['autoTheme', 'showSuggestions', 'showRetryQuiz', 'vioraPersonality'];
-                            if (validSettings.includes(settingName as keyof AppSettings)) {
-                                const settingValue = (value === 'true') ? true : (value === 'false' ? false : value);
-                                onSetSettings(prev => ({...prev, [settingName as keyof AppSettings]: settingValue}));
+                            const settingNameStr = settingName as keyof AppSettings;
+
+                            if (validSettings.includes(settingNameStr)) {
+                                if (settingNameStr === 'vioraPersonality') {
+                                    if (value === 'classic' || value === 'creative') {
+                                        onSetSettings(prev => ({...prev, vioraPersonality: value}));
+                                    } else {
+                                        confirmationText = `Sorry, I can't set personality to "${value}".`;
+                                    }
+                                } else {
+                                    onSetSettings(prev => ({...prev, [settingNameStr]: value === 'true'}));
+                                }
                             } else {
-                                confirmationText = `Sorry, I can't find a setting called "${settingName}".`;
+                                confirmationText = `Sorry, I can't find a setting called "${settingNameStr}".`;
                             }
                         }
                         const systemMessage: ChatMessage = { id: self.crypto.randomUUID(), role: 'system', text: confirmationText, timestamp: Date.now() };

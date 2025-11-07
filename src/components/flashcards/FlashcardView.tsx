@@ -29,7 +29,7 @@ const FlashcardView: React.FC<FlashcardViewProps> = ({ flashcardData, onExit, th
     };
 
     return (
-        <div className="flex-1 overflow-y-auto p-6 w-full max-w-6xl mx-auto">
+        <div className="flex-1 overflow-y-auto p-6 w-full max-w-6xl mx-auto animate-slide-in">
             <h2 className={`text-2xl font-bold mb-4 text-center ${theme === 'professional' ? 'text-sky-500' : 'text-indigo-400'}`}>Viora Flashcards</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {flashcards.map(card => (

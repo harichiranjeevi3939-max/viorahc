@@ -31,7 +31,7 @@ const PersonalityIndicator: React.FC<{ theme: Theme, personality: VioraPersonali
     const { Icon, label } = personalityInfo[personality];
 
     return (
-        <div className={`absolute bottom-full left-2 mb-2 px-2 py-1 flex items-center gap-1.5 text-xs rounded-full border transition-all ${theme === 'professional' ? 'bg-white/60 backdrop-blur-sm border-gray-200' : 'bg-black/20 backdrop-blur-sm border-white/10'}`}>
+        <div className={`absolute bottom-full left-2 mb-2 px-2 py-1 flex items-center gap-1.5 text-xs rounded-full border transition-all animate-subtle-pulse ${theme === 'professional' ? 'bg-white/60 backdrop-blur-sm border-gray-200' : 'bg-black/20 backdrop-blur-sm border-white/10'}`}>
             <Icon className={`w-3.5 h-3.5 ${personality === 'creative' ? 'text-yellow-500' : ''}`} theme={theme} />
             <span className={`font-medium ${theme === 'professional' ? 'text-gray-600' : 'text-gray-300'}`}>{label}</span>
         </div>

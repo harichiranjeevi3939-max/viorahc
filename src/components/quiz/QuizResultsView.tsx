@@ -32,7 +32,7 @@ const QuizResultsView: React.FC<QuizResultsViewProps> = ({ results, onRetry, onE
     };
 
     return (
-        <div className="flex-1 overflow-y-auto p-6 w-full max-w-4xl mx-auto">
+        <div className="flex-1 overflow-y-auto p-6 w-full max-w-4xl mx-auto animate-slide-in">
             <h2 className={`text-3xl font-bold mb-2 text-center ${theme === 'professional' ? 'text-orange-500' : 'text-violet-400'}`}>Quiz Results</h2>
             <p className="text-center text-xl mb-6 font-semibold">You scored {score} out of {results.length}!</p>
             <div className="space-y-4">
